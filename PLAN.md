@@ -346,16 +346,22 @@ If a reviewer wants to see it running without installing anything, a Loom under 
 
 ## 9. Explicit non-goals for the MVP
 
-So we don't accidentally try to build them:
+### Originally cut, later promoted into scope
 
-- ❌ Cloud deployment (free tier or otherwise)
-- ❌ Real W3C Verifiable Credentials (we ship JCS+Ed25519, schema-compatible)
+These were on the cut list when we wrote the plan. As the build progressed, four of them became important enough to ship — moved up here so the history is honest:
+
+- ✅ **Web frontend** — shipped as a single-page light UI under `/ui/`, UX4G-aligned, in-browser Ed25519 verification via TweetNaCl.
+- ✅ **Real W3C Verifiable Credentials** — AgentFacts now uses W3C VC v2 with `DataIntegrityProof` (cryptosuite `eddsa-jcs-2022`). Same primitive, full standards envelope.
+- ✅ **Adaptive Resolver microservice** — `services/adaptive_resolver/` implements geo / capability / round-robin dispatch with signed TTL-scoped routing tokens.
+- ✅ **Cloud deploy config** — `fly.toml` ready for `fly deploy`. Still $0 on the free tier.
+
+### Genuinely out of scope
+
 - ❌ IPFS or any decentralized storage (private_facts_url points to a second HTTP host instead)
 - ❌ Tor / mix-net for the privacy path (it's about hosting decoupling, not network anonymity)
 - ❌ DID resolution (`did:web`, `did:key` etc.) — agent_name is a plain URN
 - ❌ Real revocation lists / VC-Status — TTL expiry is our only freshness mechanism
-- ❌ Adaptive resolver microservice — schema field exists, no implementation
-- ❌ Web frontend — CLI only
+- ❌ Enterprise registry abstraction (§IV.B Table 1 entries 3–6) — quilt shown with 2 of 6 styles
 - ❌ Authentication on the index `/register` endpoint — anyone can register; fine for a demo, called out in README
 
-Each of these is a real feature in the paper. Each is the right thing to build *next*. None are needed to satisfy Level 1 of the brief.
+Each of these is a real feature in the paper. Each is in the [`ROADMAP.md`](./ROADMAP.md) for what to ship in the first 90 days as VP of Engineering. None are needed to satisfy Level 1 of the brief.
