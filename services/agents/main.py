@@ -14,12 +14,20 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 
 AGENT_KIND = os.environ.get("AGENT_KIND", "echo")
 AGENT_LABEL = os.environ.get("AGENT_LABEL", AGENT_KIND.title() + " Agent")
 
 app = FastAPI(title=f"NANDA Sample Agent ({AGENT_LABEL})", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")

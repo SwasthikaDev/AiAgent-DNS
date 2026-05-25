@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from nanda.crypto import load_or_create_keypair, sign_payload
 from nanda.schemas import AgentAddr, RegisterRequest
@@ -23,12 +25,25 @@ from .db import IndexDB
 DATA_DIR = Path(os.environ.get("NANDA_DATA_DIR", "data"))
 DB_PATH = DATA_DIR / "index.sqlite"
 KEY_PATH = DATA_DIR / "index_keypair.json"
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
 app = FastAPI(
     title="NANDA Index Service",
     description="Lean anchor tier — maps agent names to signed AgentAddr records.",
     version="0.1.0",
 )
+
+# CORS so the browser-side demo can hit every service in the stack.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Web UI — served from /ui so / can still return JSON (CLI compatibility).
+if FRONTEND_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="ui")
 
 db = IndexDB(DB_PATH)
 PRIVATE_KEY, PUBLIC_KEY = load_or_create_keypair(KEY_PATH)

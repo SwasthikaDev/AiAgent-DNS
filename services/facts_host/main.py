@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 
 DATA_DIR = Path(os.environ.get("FACTS_HOST_DATA_DIR", "data/facts"))
@@ -29,6 +30,13 @@ app = FastAPI(
     title=f"NANDA AgentFacts Host ({HOST_NAME})",
     description="Stores and serves signed AgentFacts JSON documents.",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
