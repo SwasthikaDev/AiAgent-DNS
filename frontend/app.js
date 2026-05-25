@@ -31,6 +31,7 @@ function canonicalize(value) {
 }
 
 function verifyEd25519(signedDoc, publicKeyB64) {
+  // Legacy detached-signature shape: top-level `signature` field.
   const { signature, ...unsigned } = signedDoc;
   if (!signature) return false;
   try {
@@ -40,6 +41,26 @@ function verifyEd25519(signedDoc, publicKeyB64) {
     return nacl.sign.detached.verify(msg, sig, pub);
   } catch (e) {
     console.error("verify error:", e);
+    return false;
+  }
+}
+
+// W3C VC v2 with DataIntegrityProof (cryptosuite: eddsa-jcs-2022).
+// Strips `proof` entirely, re-canonicalizes, verifies via the same Ed25519
+// primitive as `verifyEd25519`.
+function verifyVC(credential, publicKeyB64) {
+  const proof = credential?.proof;
+  if (!proof || proof.cryptosuite !== "eddsa-jcs-2022" || !proof.proofValue) {
+    return false;
+  }
+  const { proof: _omit, ...unsigned } = credential;
+  try {
+    const msg = new TextEncoder().encode(canonicalize(unsigned));
+    const sig = nacl.util.decodeBase64(proof.proofValue);
+    const pub = nacl.util.decodeBase64(publicKeyB64);
+    return nacl.sign.detached.verify(msg, sig, pub);
+  } catch (e) {
+    console.error("verify VC error:", e);
     return false;
   }
 }
@@ -81,11 +102,12 @@ function renderJson(obj, opts = {}) {
 
 // ----------- Service status pings ------------------------------------
 const SERVICES = [
-  { name: "index",   url: CFG.INDEX_URL,          color: "cyan"    },
-  { name: "facts·1", url: CFG.FACTS_PRIMARY_URL,  color: "violet"  },
-  { name: "facts·2", url: CFG.FACTS_PRIVATE_URL,  color: "violet"  },
-  { name: "agent·1", url: CFG.AGENT_ECHO_URL,     color: "emerald" },
-  { name: "agent·2", url: CFG.AGENT_TRANSLATE_URL,color: "emerald" },
+  { name: "index",    url: CFG.INDEX_URL,             color: "cyan"    },
+  { name: "facts·1",  url: CFG.FACTS_PRIMARY_URL,     color: "violet"  },
+  { name: "facts·2",  url: CFG.FACTS_PRIVATE_URL,     color: "violet"  },
+  { name: "agent·1",  url: CFG.AGENT_ECHO_URL,        color: "emerald" },
+  { name: "agent·2",  url: CFG.AGENT_TRANSLATE_URL,   color: "emerald" },
+  { name: "resolver", url: CFG.ADAPTIVE_RESOLVER_URL, color: "amber"   },
 ];
 
 async function pingService(url) {
@@ -341,36 +363,38 @@ async function runResolutionCascade(agentName, options = {}) {
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
-    `label&nbsp;<span class="text-amber-700 font-semibold">"${facts.label}"</span>`;
+    `label&nbsp;<span class="text-amber-700 font-semibold">"${facts.credentialSubject?.label ?? facts.label ?? "(unknown)"}"</span>`;
   await sleep(350);
 
-  // 5) verify AgentFacts with the agent's public key (from AgentAddr)
+  // 5) verify AgentFacts VC with the agent's public key (from AgentAddr).
+  // Uses W3C DataIntegrityProof / eddsa-jcs-2022.
   appendStep(host, {
     num: 5, total,
-    title: `Verify AgentFacts signature against the agent's own public key`,
-    detail: `pubkey trust anchored by step 3 — chain of custody complete`,
+    title: `Verify AgentFacts VC against the agent's own public key`,
+    detail: `DataIntegrityProof · eddsa-jcs-2022 · pubkey from step 3`,
     status: "pending",
   });
-  const factsOK = verifyEd25519(facts, addr.public_key);
+  const factsOK = verifyVC(facts, addr.public_key);
   host.lastChild.className = `cascade-step ${factsOK ? "success" : "error"} shown`;
   host.lastChild.querySelector(".step-num").className = `step-num ${factsOK ? "success" : "error"}`;
   host.lastChild.querySelector(".step-num").textContent = factsOK ? "✓" : "✗";
   if (!factsOK) {
     host.lastChild.querySelector(".step-detail").innerHTML =
-      `<span class="text-red-700 font-semibold">facts signature INVALID — refusing to trust endpoint</span>`;
+      `<span class="text-red-700 font-semibold">VC signature INVALID — refusing to trust endpoint</span>`;
     return null;
   }
   await sleep(200);
 
-  // Show the resolved docs
+  // Show the resolved docs.
   appendJsonCard(cascadeEl(), "Signed AgentAddr (verified)", addr, {
     highlightSig: true,
   });
-  appendJsonCard(cascadeEl(), "Signed AgentFacts (verified)", facts, {
+  appendJsonCard(cascadeEl(), "AgentFacts — W3C VC v2 (verified)", facts, {
     highlightSig: true,
   });
 
-  // Endpoint banner
+  // Endpoint banner — pull the verified endpoint out of credentialSubject.
+  const endpoint = facts.credentialSubject.endpoints.static[0];
   const banner = document.createElement("div");
   banner.className = "alert alert-success mt-5";
   banner.innerHTML = `
@@ -379,7 +403,7 @@ async function runResolutionCascade(agentName, options = {}) {
       <div class="font-semibold">Trust chain complete</div>
       <div class="text-sm mt-0.5">
         Safe to call endpoint
-        <span class="font-mono text-emerald-900 font-semibold">${facts.endpoints.static[0]}</span>
+        <span class="font-mono text-emerald-900 font-semibold">${endpoint}</span>
       </div>
     </div>
   `;
@@ -392,6 +416,8 @@ async function runResolutionCascade(agentName, options = {}) {
 $("#callBtn").addEventListener("click", async () => {
   const name = $("#callAgentSelect").value;
   const message = $("#callMessage").value || "hello from the browser";
+  const useAdaptive = $("#adaptiveToggle").checked;
+  const region = $("#regionSelect").value;
   const resultBox = $("#callResult");
   resultBox.classList.remove("hidden");
   resultBox.innerHTML = `<div class="text-sm text-slate-500">Resolving agent…</div>`;
@@ -401,7 +427,54 @@ $("#callBtn").addEventListener("click", async () => {
     resultBox.innerHTML = `<div class="alert alert-danger text-sm">Resolution failed; refusing to call.</div>`;
     return;
   }
-  const endpoint = resolved.facts.endpoints.static[0];
+
+  let endpoint;
+  let extraDetail = "";
+
+  if (useAdaptive) {
+    const resolverUrl = resolved.addr.adaptive_resolver_url;
+    if (!resolverUrl) {
+      resultBox.innerHTML = `<div class="alert alert-danger text-sm">
+        This agent has no <code>adaptive_resolver_url</code>. Try the <strong>multiregion</strong> agent.
+      </div>`;
+      return;
+    }
+    try {
+      const r = await fetch(resolverUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_name: name,
+          client_region: region,
+          policy: "geo",
+        }),
+      });
+      const token = await r.json();
+      const resolverPub = token.resolver_pubkey;
+      if (!resolverPub || !verifyEd25519(token, resolverPub)) {
+        resultBox.innerHTML = `<div class="alert alert-danger text-sm">
+          Adaptive routing token failed signature verification. Refusing to call.
+        </div>`;
+        return;
+      }
+      endpoint = token.endpoint;
+      extraDetail = `
+        <div class="alert alert-info mt-3 text-sm">
+          <span class="badge-result ok">resolver</span>
+          <div>
+            <strong>Adaptive routing token verified.</strong>
+            Policy <code>${token.policy_applied}</code>, region
+            <code>${token.region}</code>, expires_at <code>${token.expires_at}</code>.
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      resultBox.innerHTML = `<div class="alert alert-danger text-sm">Adaptive resolver call failed: ${e.message}</div>`;
+      return;
+    }
+  } else {
+    endpoint = resolved.facts.credentialSubject.endpoints.static[0];
+  }
 
   resultBox.innerHTML = `<div class="text-sm text-slate-500">POST ${endpoint} …</div>`;
   try {
@@ -412,7 +485,8 @@ $("#callBtn").addEventListener("click", async () => {
     });
     const body = await r.json();
     resultBox.innerHTML = `
-      <p class="text-xs uppercase tracking-widest text-slate-500 mb-1.5 font-semibold">Response from <span class="font-mono text-slate-700">${endpoint}</span></p>
+      ${extraDetail}
+      <p class="text-xs uppercase tracking-widest text-slate-500 mb-1.5 mt-3 font-semibold">Response from <span class="font-mono text-slate-700">${endpoint}</span></p>
       <div class="json-block">${renderJson(body)}</div>
     `;
   } catch (e) {
@@ -437,21 +511,21 @@ $("#tamperBtn").addEventListener("click", async () => {
     return;
   }
 
-  // Sanity: original must verify (proves the system works before we attack it)
-  const originallyValid = verifyEd25519(facts, addr.public_key);
-  const originalEndpoint = facts.endpoints.static[0];
+  // Sanity check: the unmutated VC must verify before we attack it.
+  const originallyValid = verifyVC(facts, addr.public_key);
+  const originalEndpoint = facts.credentialSubject.endpoints.static[0];
   const tampered = JSON.parse(JSON.stringify(facts));
-  tampered.endpoints.static[0] = "http://evil.example.com/steal";
-  const tamperedValid = verifyEd25519(tampered, addr.public_key);
+  tampered.credentialSubject.endpoints.static[0] = "http://evil.example.com/steal";
+  const tamperedValid = verifyVC(tampered, addr.public_key);
 
   out.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <section class="border border-slate-200 rounded-md p-4 bg-white">
         <div class="flex items-center justify-between mb-2">
-          <p class="text-xs uppercase tracking-widest font-semibold text-slate-700">Step 1 · Original signed facts</p>
+          <p class="text-xs uppercase tracking-widest font-semibold text-slate-700">Step 1 · Original signed VC</p>
           <span class="badge-result ${originallyValid ? "ok" : "fail"}">${originallyValid ? "valid" : "failed"}</span>
         </div>
-        <div class="diff-row before">"endpoints.static[0]": "${originalEndpoint}"</div>
+        <div class="diff-row before">"credentialSubject.endpoints.static[0]": "${originalEndpoint}"</div>
       </section>
 
       <section class="border border-red-200 rounded-md p-4 bg-red-50/50">
@@ -468,11 +542,12 @@ $("#tamperBtn").addEventListener("click", async () => {
       <span class="badge-result fail">rejected</span>
       <div class="text-sm leading-relaxed">
         <strong>Client refused the call.</strong>
-        An attacker can mutate any field in the JSON, but cannot forge a new
-        Ed25519 signature without the agent's private key. The client
-        re-canonicalises the mutated document, runs
-        <code>nacl.sign.detached.verify</code> in the browser, and rejects it
-        before it can hit
+        An attacker can mutate any field inside the W3C VC's
+        <code>credentialSubject</code>, but cannot forge a new
+        <code>DataIntegrityProof</code> (cryptosuite <code>eddsa-jcs-2022</code>)
+        without the agent's private key. The client strips
+        <code>proof</code>, re-canonicalises via RFC 8785 JCS, runs Ed25519
+        verify in the browser, and rejects the mutation before it can hit
         <span class="font-mono">evil.example.com</span>.
       </div>
     </div>

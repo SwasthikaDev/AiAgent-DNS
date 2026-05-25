@@ -12,5 +12,6 @@
     FACTS_PRIVATE_URL: get("facts2", "http://localhost:8002"),
     AGENT_ECHO_URL: get("agent1", "http://localhost:8010"),
     AGENT_TRANSLATE_URL: get("agent2", "http://localhost:8011"),
+    ADAPTIVE_RESOLVER_URL: get("resolver", "http://localhost:8020"),
   };
 })();

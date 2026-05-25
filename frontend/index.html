@@ -265,8 +265,10 @@
       <p class="section-eyebrow">Call an agent</p>
       <h3 class="section-title">Resolve, verify, then send</h3>
       <p class="section-desc">
-        We re-run the full resolution chain before every call. If anything fails to
-        verify, the call doesn't happen.
+        We re-run the full resolution chain before every call. Toggle
+        <em>Adaptive routing</em> to dispatch through the §VI Adaptive Resolver
+        instead of the static endpoint — you'll see a signed routing token
+        verified before the agent is hit.
       </p>
 
       <div class="card card-padded mt-4">
@@ -282,6 +284,19 @@
                      class="form-input flex-1" placeholder="message to send" />
               <button id="callBtn" class="btn-primary whitespace-nowrap">Resolve &amp; Call</button>
             </div>
+          </div>
+        </div>
+        <div class="mt-4 flex flex-wrap items-center gap-4">
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input id="adaptiveToggle" type="checkbox" class="rounded border-slate-300" />
+            <span>Use Adaptive Resolver (§VI)</span>
+          </label>
+          <div class="flex items-center gap-2 text-sm">
+            <label for="regionSelect" class="text-slate-600">Region:</label>
+            <select id="regionSelect" class="form-input text-sm sm:w-40" style="padding-top:0.4rem; padding-bottom:0.4rem;">
+              <option value="us-east">us-east</option>
+              <option value="eu-west">eu-west</option>
+            </select>
           </div>
         </div>
         <div id="callResult" class="mt-5 hidden"></div>
