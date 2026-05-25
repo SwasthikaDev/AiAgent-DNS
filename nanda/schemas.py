@@ -2,14 +2,19 @@
 
 These define what travels between the index, the facts hosts, the agents,
 and the client. They mirror the paper's AgentAddr (§IV) and AgentFacts
-(Appendix), trimmed to the fields the MVP actually uses.
+(§V + Appendix).
+
+AgentFacts is structured as a W3C Verifiable Credential v2 with a
+DataIntegrityProof. The agent-specific payload (label, endpoints, skills,
+capabilities) lives inside `credentialSubject`. The signature lives inside
+`proof.proofValue`. This matches the paper's §VII trust primitive.
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------- Index registration ----------
@@ -73,11 +78,8 @@ class Skill(BaseModel):
     description: str
 
 
-class AgentFacts(BaseModel):
-    """Signed JSON document with the agent's capabilities + endpoints.
-
-    Equivalent to the paper's AgentFacts (§V + Appendix), MVP-trimmed.
-    """
+class AgentFactsSubject(BaseModel):
+    """The agent-specific payload — what goes inside `credentialSubject`."""
 
     id: str
     agent_name: str
@@ -89,5 +91,32 @@ class AgentFacts(BaseModel):
     capabilities: Capabilities
     skills: list[Skill] = Field(default_factory=list)
     ttl: int = 300
-    issued_at: str
-    signature: str
+
+
+class DataIntegrityProof(BaseModel):
+    """W3C DataIntegrityProof block — Ed25519 over JCS-canonical JSON."""
+
+    type: str = "DataIntegrityProof"
+    cryptosuite: str = "eddsa-jcs-2022"
+    created: str
+    verificationMethod: str
+    proofPurpose: str = "assertionMethod"
+    proofValue: str
+
+
+class AgentFactsVC(BaseModel):
+    """AgentFacts wrapped as a W3C Verifiable Credential v2.
+
+    Wire format matches §VII of the paper. The signing primitive
+    (Ed25519 + JCS) is identical to what's used inside the proof; the
+    envelope adds VC-aware interoperability.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    context: list[str] = Field(alias="@context")
+    type: list[str]
+    issuer: str
+    validFrom: str
+    credentialSubject: AgentFactsSubject
+    proof: DataIntegrityProof
