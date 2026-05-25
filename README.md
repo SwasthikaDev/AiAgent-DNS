@@ -6,7 +6,7 @@ A client resolves an agent by name, fetches a signed `AgentAddr` from a lean ind
 
 Ships with **two interfaces** on top of the same backend:
 
-- a **web UI** at `http://localhost:8000/ui/` — the visual demo
+- a **web UI** at `http://localhost:8000/ui/` — light, minimal, mobile-first, UX4G-aligned
 - a **CLI** (`python -m nanda.cli`) — the technical surface
 
 > **Going into an interview?** Read [`DEMO_GUIDE.md`](./DEMO_GUIDE.md) first — it has the 90-second script, prepared answers to likely questions, and recovery moves for live failures.
@@ -77,6 +77,11 @@ The client refuses to call an endpoint whose signed document was mutated in flig
 After both signatures verify, the client POSTs the message to the endpoint listed in the (now-trusted) AgentFacts.
 
 ![Calling an agent](docs/demo-04-call.png)
+
+### Mobile / responsive
+Single-column layout, full-width buttons, no horizontal scroll. Open Sans typography, WCAG-friendly contrast, visible keyboard focus rings.
+
+![Mobile view](docs/demo-05-mobile.png)
 
 ### CLI output
 
