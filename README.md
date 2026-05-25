@@ -4,7 +4,16 @@ A working prototype of the architecture from *Beyond DNS: Unlocking the Internet
 
 A client resolves an agent by name, fetches a signed `AgentAddr` from a lean index, follows it to a signed `AgentFacts` document, verifies every signature, and then calls the agent. If anyone tampers with the metadata in flight, the client refuses to use it.
 
-Built for the NANDA VP-of-Engineering technical challenge. See [`PLAN.md`](./PLAN.md) for the build plan, architecture decisions, and an explicit list of what was scoped in vs. out.
+Ships with **two interfaces** on top of the same backend:
+
+- a **web UI** at `http://localhost:8000/ui/` — the visual demo
+- a **CLI** (`python -m nanda.cli`) — the technical surface
+
+> **Going into an interview?** Read [`DEMO_GUIDE.md`](./DEMO_GUIDE.md) first — it has the 90-second script, prepared answers to likely questions, and recovery moves for live failures.
+
+Built for the NANDA VP-of-Engineering technical challenge. See [`PLAN.md`](./PLAN.md) for the build plan and explicit non-goals.
+
+![Landing page](docs/demo-01-landing.png)
 
 ---
 
@@ -13,21 +22,29 @@ Built for the NANDA VP-of-Engineering technical challenge. See [`PLAN.md`](./PLA
 You need **Docker** (with `docker compose`) and **Python 3.11+**.
 
 ```bash
-# 1. Start the four-service stack
+# 1. Start the five-service stack
 docker compose up --build -d
 
-# 2. Install the CLI's Python deps (only used to run the client + bootstrap)
+# 2. Install the Python deps (used by the CLI + bootstrap script)
 pip install -r requirements.txt
 
 # 3. Register two demo agents
 python scripts/bootstrap.py
+```
 
-# 4. Walk the full resolution chain
+Then either:
+
+**Open the web UI** — recommended for the demo:
+```
+http://localhost:8000/ui/
+```
+Click "Resolve" on any agent to watch the trust chain animate in. Click "Run attack" in the Tamper Detection section to see the client reject a mutated document.
+
+**Or drive it from the CLI** — better for showing internals:
+```bash
 python -m nanda.cli list
 python -m nanda.cli resolve urn:agent:demo:echo
 python -m nanda.cli call urn:agent:demo:echo --message "hello"
-
-# 5. Show that the client rejects tampered metadata
 python -m nanda.cli demo-tamper urn:agent:demo:echo
 ```
 
@@ -39,10 +56,29 @@ rm -rf data/
 ```
 
 If you don't want Docker, you can run each service directly with `uvicorn` — see the `command:` lines in [`docker-compose.yml`](./docker-compose.yml).
+If a port is already in use locally, run the stack on alternate ports and open the UI with overrides:
+`http://localhost:18000/ui/?index=http://localhost:18000&facts1=http://localhost:18001&facts2=http://localhost:18002&agent1=http://localhost:18010&agent2=http://localhost:18011`
 
 ---
 
-## What you'll see
+## What it looks like
+
+### Resolution cascade (web UI)
+Every step is a real HTTP fetch and a real Ed25519 signature check, in the browser via TweetNaCl. The green ✓ is not a server saying "trust me, valid" — it's verified client-side.
+
+![Resolution cascade](docs/demo-02-cascade.png)
+
+### Tamper detection
+The client refuses to call an endpoint whose signed document was mutated in flight. Same Ed25519 primitive in the browser.
+
+![Tamper detection](docs/demo-03-tamper.png)
+
+### Calling an agent
+After both signatures verify, the client POSTs the message to the endpoint listed in the (now-trusted) AgentFacts.
+
+![Calling an agent](docs/demo-04-call.png)
+
+### CLI output
 
 `python -m nanda.cli resolve urn:agent:demo:echo` prints:
 
@@ -74,7 +110,7 @@ If you don't want Docker, you can run each service directly with `uvicorn` — s
 
 | Port  | Service           | Role |
 |-------|-------------------|---|
-| 8000  | `index`           | Lean NANDA index. Signs `AgentAddr` records. |
+| 8000  | `index`           | Lean NANDA index. Signs `AgentAddr` records. Also serves the web UI at `/ui/`. |
 | 8001  | `facts-primary`   | "Agent-owned" facts hosting → `primary_facts_url`. |
 | 8002  | `facts-private`   | Third-party facts hosting → `private_facts_url` (privacy path from §VII). |
 | 8010  | `agent-echo`      | Sample agent — echoes input. |
@@ -127,13 +163,23 @@ nanda/                Shared library (crypto, schemas, CLI)
 └── cli.py            Client (resolve, call, demo-tamper, list)
 
 services/
-├── index_service/    FastAPI app + SQLite for the lean index
+├── index_service/    FastAPI app + SQLite for the lean index; serves /ui/
 ├── facts_host/       FastAPI app that stores + serves signed AgentFacts
 └── agents/           Two sample agent endpoints (one process, two roles)
+
+frontend/             Web UI (no build step, no node_modules)
+├── index.html        Layout, Tailwind via CDN
+├── app.js            Verifier (TweetNaCl) + cascade + tamper demo
+├── styles.css        Custom CSS the CDN can't generate
+└── config.js         Endpoint URLs (overridable via query params)
 
 scripts/bootstrap.py  Registers the two demo agents end-to-end
 
 tests/test_crypto.py  Sign/verify/tamper-detection unit tests
+
+docs/                 Screenshots used in this README
+DEMO_GUIDE.md         Interview/demo script + Q&A prep
+PLAN.md               Build plan with explicit non-goals
 ```
 
 ---
