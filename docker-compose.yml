@@ -1,0 +1,67 @@
+# One-command demo stack: `docker compose up --build`
+#
+# Brings up:
+#   - index            :8000   NANDA lean index (signs AgentAddr records)
+#   - facts-primary    :8001   Agent-owned facts hosting (PrimaryFactsURL)
+#   - facts-private    :8002   Third-party facts hosting (PrivateFactsURL)
+#   - agent-echo       :8010   Sample agent
+#   - agent-translate  :8011   Sample agent
+#
+# After it's running, in another shell:
+#   pip install -r requirements.txt
+#   python scripts/bootstrap.py
+#   python -m nanda.cli list
+#   python -m nanda.cli resolve urn:agent:demo:echo
+#   python -m nanda.cli call urn:agent:demo:echo --message "hi"
+#   python -m nanda.cli demo-tamper urn:agent:demo:echo
+
+services:
+  index:
+    build: .
+    command: uvicorn services.index_service.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      NANDA_DATA_DIR: /data
+    volumes:
+      - ./data:/data
+
+  facts-primary:
+    build: .
+    command: uvicorn services.facts_host.main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    environment:
+      FACTS_HOST_NAME: primary
+      FACTS_HOST_DATA_DIR: /data/facts-primary
+    volumes:
+      - ./data:/data
+
+  facts-private:
+    build: .
+    command: uvicorn services.facts_host.main:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    environment:
+      FACTS_HOST_NAME: private
+      FACTS_HOST_DATA_DIR: /data/facts-private
+    volumes:
+      - ./data:/data
+
+  agent-echo:
+    build: .
+    command: uvicorn services.agents.main:app --host 0.0.0.0 --port 8010
+    ports:
+      - "8010:8010"
+    environment:
+      AGENT_KIND: echo
+      AGENT_LABEL: "Echo Agent"
+
+  agent-translate:
+    build: .
+    command: uvicorn services.agents.main:app --host 0.0.0.0 --port 8011
+    ports:
+      - "8011:8011"
+    environment:
+      AGENT_KIND: translate
+      AGENT_LABEL: "Mock Translator"
