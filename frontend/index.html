@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NANDA Index Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!--
+    TweetNaCl gives us Ed25519 verify in the browser — same primitive PyNaCl
+    uses server-side. The signature checks the user sees in this demo are
+    the real thing, not server-confirmed-by-API.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
+  <!-- @apply directives must live in an inline tailwindcss block to be
+       processed by the Tailwind CDN at runtime. Raw CSS goes in styles.css. -->
+  <style type="text/tailwindcss">
+    .layer-card { @apply rounded-xl border bg-slate-900/50 p-5; }
+    .layer-label { @apply text-[10px] font-semibold uppercase tracking-widest; }
+    .layer-title { @apply text-lg font-semibold mt-1; }
+    .layer-desc { @apply text-xs text-slate-400 mt-2 leading-relaxed; }
+    .layer-port { @apply text-[11px] font-mono text-slate-500 mt-3; }
+
+    .form-input {
+      @apply w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm
+             focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/60;
+    }
+    .btn-primary {
+      @apply bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-medium text-sm
+             px-4 py-2 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+    .btn-secondary {
+      @apply border border-slate-700 hover:bg-slate-800 text-slate-100 font-medium text-sm
+             px-3 py-1.5 rounded-md transition;
+    }
+    .btn-danger {
+      @apply bg-red-500 hover:bg-red-400 text-white font-medium text-sm px-4 py-2 rounded-md transition;
+    }
+    .status-pill {
+      @apply flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-900 border border-slate-800;
+    }
+    .status-dot { @apply w-2 h-2 rounded-full; }
+    .status-dot.up    { @apply bg-emerald-400; }
+    .status-dot.down  { @apply bg-red-500; }
+    .status-dot.unknown { @apply bg-slate-600; }
+
+    .agent-row {
+      @apply rounded-lg border border-slate-800 bg-slate-900/50
+             p-4 flex items-center justify-between gap-4 transition hover:border-slate-700;
+    }
+    .agent-name { @apply font-mono text-sm font-medium text-cyan-300; }
+    .agent-meta { @apply text-xs text-slate-500 mt-1; }
+    .hosting-badge {
+      @apply text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full;
+    }
+    .hosting-badge.primary { @apply bg-violet-500/15 text-violet-300 border border-violet-500/30; }
+    .hosting-badge.private { @apply bg-amber-500/15 text-amber-300 border border-amber-500/30; }
+
+    .cascade-step { @apply flex items-start gap-3 p-3 rounded-lg transition-all duration-300; }
+    .cascade-step.success { @apply bg-emerald-500/5 border border-emerald-500/20; }
+    .cascade-step.error   { @apply bg-red-500/5 border border-red-500/20; }
+    .cascade-step.pending { @apply bg-slate-800/40 border border-slate-700; }
+    .step-num {
+      @apply w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0;
+    }
+    .step-num.success { @apply bg-emerald-500 text-slate-900; }
+    .step-num.error   { @apply bg-red-500 text-white; }
+    .step-num.pending { @apply bg-slate-700 text-slate-300; }
+    .step-title { @apply text-sm font-medium; }
+    .step-detail { @apply text-xs text-slate-400 font-mono mt-1 break-all; }
+
+    .json-block {
+      @apply font-mono text-xs bg-slate-950 border border-slate-800 rounded-lg p-4 overflow-x-auto leading-relaxed;
+    }
+    .tamper-stamp {
+      @apply inline-block border-4 border-red-500 text-red-500 font-extrabold
+             uppercase tracking-widest px-4 py-1 rounded;
+    }
+    .diff-row { @apply font-mono text-xs p-2 rounded; }
+    .diff-row.before { @apply bg-slate-800/40 text-slate-400; }
+    .diff-row.after  { @apply bg-red-500/15 text-red-300 line-through; }
+    .diff-row.after-new { @apply bg-red-500/15 text-red-300; }
+  </style>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+  <!-- ============== HEADER ============== -->
+  <header class="border-b border-slate-800 bg-slate-950/95 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center font-bold text-slate-900">N</div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight">NANDA Index Explorer</h1>
+          <p class="text-xs text-slate-400">Beyond DNS · The Internet of AI Agents</p>
+        </div>
+      </div>
+      <div id="serviceStatus" class="flex items-center gap-3 text-xs"></div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-10">
+
+    <!-- ============== ARCHITECTURE OVERVIEW ============== -->
+    <section>
+      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-3">Architecture</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="layer-card border-cyan-500/30">
+          <div class="layer-label text-cyan-400">Tier 1 · Anchor</div>
+          <div class="layer-title">Lean Index</div>
+          <div class="layer-desc">Tiny signed record per agent. Returns a verifiable <code>AgentAddr</code> pointing to where the rich metadata lives.</div>
+          <div class="layer-port">localhost:8000</div>
+        </div>
+        <div class="layer-card border-violet-500/30">
+          <div class="layer-label text-violet-400">Tier 2 · Metadata</div>
+          <div class="layer-title">AgentFacts Hosts</div>
+          <div class="layer-desc">Stores signed JSON-LD documents with capabilities, skills, endpoints. Two flavors: agent-owned (primary) and third-party (private).</div>
+          <div class="layer-port">localhost:8001 &amp; :8002</div>
+        </div>
+        <div class="layer-card border-emerald-500/30">
+          <div class="layer-label text-emerald-400">Tier 3 · Runtime</div>
+          <div class="layer-title">Agent Endpoints</div>
+          <div class="layer-desc">Where the actual work happens. The client only calls these <em>after</em> verifying both signatures upstream.</div>
+          <div class="layer-port">localhost:8010 &amp; :8011</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== AGENT REGISTRY ============== -->
+    <section>
+      <div class="flex items-end justify-between mb-3">
+        <div>
+          <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400">Registered Agents</h2>
+          <p class="text-xs text-slate-500 mt-1">Two demo agents covering both registration styles from the paper's "quilt" model.</p>
+        </div>
+        <button id="refreshBtn" class="text-xs px-3 py-1.5 rounded-md border border-slate-700 hover:bg-slate-800 transition">Refresh</button>
+      </div>
+      <div id="agentList" class="space-y-2"></div>
+      <div id="noAgentsHelp" class="hidden mt-4 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
+        <strong>No agents registered yet.</strong> Run the bootstrap script in your terminal:
+        <pre class="mt-2 text-xs bg-slate-900/60 p-2 rounded">python scripts/bootstrap.py</pre>
+        then hit Refresh.
+      </div>
+    </section>
+
+    <!-- ============== RESOLUTION CASCADE ============== -->
+    <section>
+      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-1">Resolution Flow</h2>
+      <p class="text-xs text-slate-500 mb-3">
+        Click <em>Resolve</em> on any agent above. Each step runs a real HTTP fetch
+        and a real Ed25519 signature check, in the browser.
+      </p>
+      <div id="resolutionPanel" class="rounded-xl border border-slate-800 bg-slate-900/50 p-6 min-h-[200px]">
+        <p class="text-slate-500 text-sm text-center py-8">
+          Select an agent above and click <span class="text-cyan-400">Resolve</span> to watch the chain unfold.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== CALL AGENT ============== -->
+    <section>
+      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-3">Call Agent</h2>
+      <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="md:col-span-1">
+            <label class="block text-xs text-slate-400 mb-1">Agent</label>
+            <select id="callAgentSelect" class="form-input"></select>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-xs text-slate-400 mb-1">Message</label>
+            <div class="flex gap-2">
+              <input id="callMessage" type="text" value="hello from the browser"
+                     class="form-input flex-1" placeholder="message to send" />
+              <button id="callBtn" class="btn-primary">Resolve &amp; Call</button>
+            </div>
+          </div>
+        </div>
+        <div id="callResult" class="mt-4 hidden"></div>
+      </div>
+    </section>
+
+    <!-- ============== TAMPER DEMO ============== -->
+    <section>
+      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-1">Tamper Detection</h2>
+      <p class="text-xs text-slate-500 mb-3">
+        Simulates a man-in-the-middle swapping the endpoint URL inside a signed
+        <code>AgentFacts</code>. The client must reject the mutated document.
+      </p>
+      <div class="rounded-xl border border-red-900/40 bg-gradient-to-br from-red-950/20 to-slate-900/50 p-6">
+        <div class="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div class="text-sm font-semibold">Simulate man-in-the-middle attack</div>
+            <div class="text-xs text-slate-400 mt-1">
+              Fetches a real signed document, mutates one field, re-runs the verifier.
+            </div>
+          </div>
+          <div class="flex gap-2 items-center">
+            <select id="tamperAgentSelect" class="form-input text-sm"></select>
+            <button id="tamperBtn" class="btn-danger">Run attack</button>
+          </div>
+        </div>
+        <div id="tamperResult" class="mt-5 hidden"></div>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-slate-600 pt-8 pb-4">
+      Built for the NANDA challenge ·
+      <a href="https://github.com/" class="underline hover:text-slate-400">repo</a> ·
+      <a href="/docs" class="underline hover:text-slate-400">Index API docs</a>
+    </footer>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
