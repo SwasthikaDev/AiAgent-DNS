@@ -95,25 +95,35 @@ Because the answer to *that* is the answer to whether we'd work well together."
 
 > *Speak conversationally — like you're explaining over coffee.*
 
-"Quick context on me. I've spent the last **[X years]** building **[backend systems / distributed services / what you've actually built]**. My current role is at **[Calyrex]** — and one thing I want to flag early is that **we run our own on-premise infrastructure** there, not just cloud. So when this paper talks about agents being hosted on agent-owned domains, on third-party hosts, or on neutral public infrastructure, those aren't abstractions to me. I've spent real time on the trade-offs — who hosts what, who trusts whom, what fails when a region goes down.
+"Quick context on me. I've spent the last **[X years]** building **[backend systems / distributed services / what you've actually built]**. My current role is at **[calyirex]** — and one thing I want to flag early is that **we run our own on-premise infrastructure** there, not just cloud. So when this paper talks about agents being hosted on agent-owned domains, on third-party hosts, or on neutral public infrastructure, those aren't abstractions to me. I've spent real time on the trade-offs — who hosts what, who trusts whom, what fails when a region goes down.
 
 What pulled me into this challenge isn't that I needed *a* job. It's that the NANDA paper points at a problem I've quietly believed for two years — that we are about to ask the existing internet to do something it wasn't designed for. And nobody is treating that as an emergency yet."
 
 > *Emphasize **"nobody is treating that as an emergency."** Brief pause.*
 
-> **Personalization note:** confirm `[Calyrex]` spelling and adjust if needed. The whole point of this beat is to land "I have real infra experience, not just toy-project experience" — swap in whatever framing makes that true for you.
+> **Personalization note:** confirm `[calyirex]` spelling and adjust if needed. The whole point of this beat is to land "I have real infra experience, not just toy-project experience" — swap in whatever framing makes that true for you.
 
 ---
 
-### 🎬 Section 3 — The problem, made relatable (1:00 – 1:35) · back to face
+### 🎬 Section 3 — The problem, made relatable (1:00 – 1:45) · back to face
 
 > *Lean in slightly. This is the moment to be a teacher, not a candidate.*
 
 "Here's the thing. DNS was designed in 1983. It maps a name like `google.com` to a static IP address. It assumes the thing you're looking up has a fixed home that rarely changes.
 
-Now imagine **billions of AI agents** — booking flights, negotiating contracts, talking to each other. They move every few seconds. They have skills that need to be advertised. They need to be trusted — *is this really the Salesforce agent or someone pretending?* And they need privacy — you shouldn't have to reveal who *you* are just to ask if an agent exists.
+And we've already seen what happens when that model gets stretched.
 
-DNS can't do any of that. It's a phonebook. We need something closer to a verified directory with a security guard at the door.
+In **2016, the Mirai botnet took down Dyn's DNS**, and most of the US East Coast lost Twitter, Reddit, Spotify, and GitHub for hours. Static infrastructure couldn't absorb the load.
+
+In **2018, attackers hijacked AWS Route 53 and rerouted MyEtherWallet's domain** — stole hundreds of thousands in crypto. The TLS cert was valid. The browser lock icon was green. Everything *looked* fine. **The trust was at the wrong layer.**
+
+In **2021, Facebook withdrew their own BGP routes and were locked out of their own buildings for six hours**, because their badge readers couldn't resolve internal DNS.
+
+Each of those is the same story: the resolution layer doing too much, or trusting the wrong thing, and there's no graceful failure mode.
+
+Now imagine that same fragility, with **billions of AI agents** booking flights, negotiating contracts, talking to each other. Agents that move every few seconds. That need to be trusted — *is this really the Salesforce agent or someone pretending?* That need privacy — you shouldn't reveal who *you* are just to ask if an agent exists.
+
+DNS can't do any of that. It's a phonebook. We need something closer to a verified directory with a security guard at the door — and a graceful way to fail when one of the guards goes bad.
 
 That's what the NANDA paper proposes. And that's what I built."
 
@@ -121,9 +131,11 @@ That's what the NANDA paper proposes. And that's what I built."
 
 **[VISUAL: scroll slowly down the UI showing the three-tier architecture cards]**
 
+> **Delivery note for Section 3:** the three DNS failures are the most-rehearsable beat in the whole video. Practice them so you can deliver each one in 5–6 seconds without losing the cadence. Don't read dates off the screen — internalize them. If you only remember one, the Facebook 2021 story is the most universally known.
+
 ---
 
-### 🎬 Section 4 — Why I started building (1:35 – 2:00) · screen share with brief face cut-in
+### 🎬 Section 4 — Why I started building (1:45 – 2:10) · screen share with brief face cut-in
 
 > *Voice slightly warmer, like you're admitting something.*
 
@@ -137,7 +149,7 @@ I wrote that decision down before I wrote any code. It's in the repo as `PLAN.md
 
 ---
 
-### 🎬 Section 5 — The product, walked through live (2:00 – 3:10) · screen share, narrate the demo
+### 🎬 Section 5 — The product, walked through live (2:10 – 3:20) · screen share, narrate the demo
 
 > *This is the headline. Slow down. Let the animations breathe.*
 
@@ -173,7 +185,7 @@ That, in one click, is the whole security argument of the paper, demonstrated li
 
 ---
 
-### 🎬 Section 6 — How it works (3:10 – 3:45) · back to face
+### 🎬 Section 6 — How it works (3:20 – 3:55) · back to face
 
 > *Calmer pace. You're proving you actually understand it.*
 
@@ -183,7 +195,7 @@ One more thing on the hosting model. The paper explicitly supports three deploym
 
 ---
 
-### 🎬 Section 6.5 — What I shipped, what I cut, why (3:45 – 4:15) · face, calm and confident
+### 🎬 Section 6.5 — What I shipped, what I cut, why (3:55 – 4:25) · face, calm and confident
 
 > *This is the move. Read it slowly. Don't apologize for any of it. Each cut is reasoned.*
 
@@ -197,7 +209,7 @@ Every cut is in `PLAN.md` section nine, with the reasoning. **I'd rather defend 
 
 ---
 
-### 🎬 Section 6.7 — Risk model · what fails if one bad actor enters (4:15 – 4:45) · face, serious
+### 🎬 Section 6.7 — Risk model · what fails if one bad actor enters (4:25 – 4:55) · face, serious
 
 > *Slow down. This is the part where you sound like an engineer who has been on-call, not just one who has built features. Don't be alarmist — be calibrated.*
 
@@ -211,7 +223,7 @@ What's not solved yet, honestly: there's no Sybil prevention on `/register`, no 
 
 ---
 
-### 🎬 Section 7 — Challenges and lessons (4:45 – 5:10) · face, slightly more reflective
+### 🎬 Section 7 — Challenges and lessons (4:55 – 5:25) · face, slightly more reflective
 
 > *Honesty mode. This is where most candidates over-polish. Don't.*
 
@@ -225,19 +237,27 @@ Second — I had to **resist scope creep constantly**. Every time I solved one l
 
 ---
 
-### 🎬 Section 8 — Where this goes next (5:10 – 5:30) · face, energy lifts
+### 🎬 Section 8 — Where this goes next + open questions (5:25 – 6:00) · face, energy lifts
 
-> *Confident but not hype-y.*
+> *Confident but not hype-y. This section now does double duty — forward-looking AND honest about what the paper itself doesn't resolve.*
 
 "I'm not done with this problem.
 
-In **two weeks**, I'm heading to **SuperAI Singapore** — I've been selected for the hackathon happening **June 8th to 11th**. It's heavily focused on AI agent systems, and I'm planning to evolve this work there into something more ambitious: an agentic layer on top of the NANDA index, where agents don't just *resolve* each other — they *negotiate*, *delegate*, and *audit* each other autonomously.
+In **two weeks** I'm at **SuperAI Singapore** — I've been selected for the hackathon **June 8th to 11th** — where I'm extending this work toward an agentic layer on top of the NANDA index. Agents that don't just *resolve* each other; they *negotiate*, *delegate*, and *audit* each other autonomously.
 
-That's the direction the paper hints at in its future-work section, and I want to be one of the people who actually builds it."
+But I also want to be honest about **what the paper itself leaves open**. Section eleven lists eight unresolved questions. The three I think are most strategic:
+
+**Hosting governance** — who runs the public NANDA registries, and under what accountability? The paper doesn't decide.
+
+**Credential delegation** — can an agent issue credentials to another agent on the fly? Without an answer, automated trust either over-permissions or grinds to a halt.
+
+**Economic incentives** — without a model for who pays to run registries and verifiers, the public infrastructure won't survive contact with reality.
+
+I have positions on all three. They're worth having on the inside of a project, not the outside."
 
 ---
 
-### 🎬 Section 9 — Close (5:30 – 5:45) · face, calm, direct
+### 🎬 Section 9 — Close (6:00 – 6:15) · face, calm, direct
 
 > ***Lower your pace. Look straight into the lens.** This is the line they'll remember.*
 
@@ -261,18 +281,23 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 |---|---|---|---|
 | 1 — Opening hook | 0:00 – 0:20 | 20 s | Face |
 | 2 — Who I am (incl. infra credibility) | 0:20 – 1:00 | 40 s | Voice over UI |
-| 3 — The problem | 1:00 – 1:35 | 35 s | Face |
-| 4 — Why I built | 1:35 – 2:00 | 25 s | Screen + face cut |
-| 5 — Live demo (with VC note) | 2:00 – 3:10 | 70 s | Screen, narrated |
-| 6 — How it works (incl. hosting models) | 3:10 – 3:45 | 35 s | Face |
-| **6.5 — What I shipped vs cut** | **3:45 – 4:15** | **30 s** | **Face (the move)** |
-| **6.7 — Risk model / blast radius** | **4:15 – 4:45** | **30 s** | **Face (serious)** |
-| 7 — Challenges | 4:45 – 5:10 | 25 s | Face |
-| 8 — SuperAI vision | 5:10 – 5:30 | 20 s | Face |
-| 9 — Close | 5:30 – 5:45 | 15 s | Face |
-| **Total** | | **5:45** | |
+| **3 — The problem (with 3 DNS-failure examples)** | **1:00 – 1:45** | **45 s** | **Face** |
+| 4 — Why I built | 1:45 – 2:10 | 25 s | Screen + face cut |
+| 5 — Live demo (with VC note) | 2:10 – 3:20 | 70 s | Screen, narrated |
+| 6 — How it works (incl. hosting models) | 3:20 – 3:55 | 35 s | Face |
+| **6.5 — What I shipped vs cut** | **3:55 – 4:25** | **30 s** | **Face (the move)** |
+| **6.7 — Risk model / blast radius** | **4:25 – 4:55** | **30 s** | **Face (serious)** |
+| 7 — Challenges | 4:55 – 5:25 | 30 s | Face |
+| **8 — Vision + open questions** | **5:25 – 6:00** | **35 s** | **Face** |
+| 9 — Close | 6:00 – 6:15 | 15 s | Face |
+| **Total** | | **6:15** | |
 
-> **If you need to hit a hard 5:00 cap:** drop Section 4 entirely (the "I almost overscoped" beat moves into Section 6.5 implicitly). That saves 25 s and the script lands at 5:20 — close enough.
+> **If you need to hit a hard 5:00 cap, in priority order:**
+> 1. Drop Section 4 entirely (–25 s). The "I almost overscoped" beat folds implicitly into Section 6.5.
+> 2. Cut Section 3 from 3 DNS failures to 1 (keep just Facebook 2021) (–20 s).
+> 3. Cut Section 7 to "JSON canonicalization tripped me up, and the discipline to stop tripped me up more" (–15 s).
+>
+> All three cuts together → ~5:15. Two of three → ~5:35. Pick based on what you can deliver naturally.
 
 ---
 
@@ -299,17 +324,22 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 ### Places to **pause** — don't rush past these
 
 - After *"nobody is treating that as an emergency yet"* (~1:00)
-- After the green checks finish animating (~2:45)
-- After the red INVALID stamp lands (~3:05) — **one full second**
-- After *"defend a small system clearly than a half-finished large one"* (~4:15) — **two seconds**
-- After *"by accident or by intent"* (~4:25) — **one full second**, lets the threat-model framing land
-- After *"first item in the roadmap is closing them"* (~4:45)
-- Before *"Thank you"* (~5:43) — **two full seconds**
+- After *"the trust was at the wrong layer"* (~1:25) — **one full second**, the MyEtherWallet beat needs to land
+- After *"and a graceful way to fail when one of the guards goes bad"* (~1:42)
+- After the green checks finish animating (~2:55)
+- After the red INVALID stamp lands (~3:15) — **one full second**
+- After *"defend a small system clearly than a half-finished large one"* (~4:25) — **two seconds**
+- After *"by accident or by intent"* (~4:35) — **one full second**, lets the threat-model framing land
+- After *"first item in the roadmap is closing them"* (~4:55)
+- After *"on the inside of a project, not the outside"* (~5:58) — **one full second**
+- Before *"Thank you"* (~6:13) — **two full seconds**
 
 ### Places to **emphasize** — gentle stress, not volume
 
 - "**we run our own on-premise infrastructure**"
 - "**why** I built it the way I did"
+- "**The trust was at the wrong layer**" (MyEtherWallet beat — this is the line that earns the historical detour)
+- "**locked out of their own buildings for six hours**" (Facebook beat)
 - "**in your browser**, using TweetNaCl"
 - "**same Ed25519 primitive** that W3C Verifiable Credentials are built on"
 - "**deliberately not build**"
@@ -319,6 +349,7 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 - "**contain blast radius**"
 - "**by accident *or* by intent**"
 - "**two weeks**" (before SuperAI mention)
+- "**on the inside of a project, not the outside**" (the open-questions landing)
 - "**right now**, in papers and prototypes and hackathons"
 
 ---
@@ -376,6 +407,18 @@ Three questions are most likely after this video. Memorize these short answers �
 ### Q6. "How would you operationalize this if you got hired tomorrow?"
 
 > "Three things in the first 30 days. One: turn the reference implementation into something we can actually run a public testnet on — sharded KV instead of SQLite, OpenTelemetry traces, a real revocation list. Two: stand up that testnet so external teams have an always-on registry to point their agents at. Three: get one interop demo done with MCP, A2A, or NLWeb. Full plan is in `ROADMAP.md` in the repo — happy to walk through it."
+
+### Q7. "You mentioned hosting governance is an open question. What's your position?"
+
+> "I think public NANDA infrastructure has to be run as a federation, not a single authority — closer to how Let's Encrypt or the certificate transparency log network is governed than how DNS root servers are. Multiple independent operators, cross-signed, with public audit logs. Otherwise you've just rebuilt the original trust problem in a new namespace, and the first regulator that asks 'who is accountable when an agent misbehaves?' gets no satisfying answer. That's a position I'd defend in a steering-committee meeting on day one."
+
+### Q8. "And credential delegation? Should agents be able to issue credentials to other agents?"
+
+> "Cautiously yes, but opt-in and bounded. The paper is right that without it, automated agent ecosystems can't scale — humans can't sign every credential. But the failure mode is trust inflation: agent A vouches for agent B vouches for agent C, and three hops later you have no idea what the original assertion was worth. My position: bounded delegation with explicit depth limits, and a `proof chain` that's visible in the VC. If you can't see who vouched for whom in three jumps, you don't trust it. The architecture supports this; the spec needs to decide."
+
+### Q9. "Economic incentives — micropayments? Staking? What's the answer?"
+
+> "Honest answer — I don't think anyone has the right answer yet, and the paper says as much. My instinct is that monetization should attach to *verification compute*, not to registration. Charge for running a high-availability VC-Status revocation endpoint, or a low-latency adaptive resolver — services that have actual operational cost. Don't charge to *be in the index*; that's how you get gatekeeping and rent-seeking, both of which kill open infrastructure. But this is the question I'd most want to debate with Ramesh and the research team before locking in."
 
 ---
 
