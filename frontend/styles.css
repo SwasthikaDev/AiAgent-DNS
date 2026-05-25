@@ -1,66 +1,99 @@
-/* Custom CSS for things Tailwind doesn't cover. The @apply utility classes
-   live in the inline <style type="text/tailwindcss"> block in index.html so
-   the Tailwind CDN's runtime processor can see them. */
+/* Custom CSS for things Tailwind doesn't generate. UX4G-aligned light theme
+   built on Open Sans, neutral surfaces, and a single blue primary accent.
+
+   Tailwind @apply utility classes live in the inline <style type="text/tailwindcss">
+   block in index.html so the CDN's runtime processor can see them.
+*/
 
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Open Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 }
 
 body {
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 code, pre, .mono {
   font-family: var(--font-mono);
 }
 
-/* Glow on the green status dot — pure CSS, not Tailwind. */
-.status-dot.up {
-  box-shadow: 0 0 8px #34d399;
-}
-
-/* Cascade step entry animation. */
+/* Step entry animation — kept subtle. */
 .cascade-step {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(6px);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out, background-color 0.25s;
 }
 .cascade-step.shown {
   opacity: 1;
   transform: translateY(0);
 }
 
-/* JSON syntax highlight palette. */
+/* JSON syntax highlight palette — light theme, WCAG-friendly contrast. */
 .json-block { white-space: pre; }
-.json-key   { color: #67e8f9; }
-.json-str   { color: #fde68a; }
-.json-num   { color: #c4b5fd; }
-.json-bool  { color: #f9a8d4; }
-.json-null  { color: #94a3b8; }
-.json-sig   { color: #f87171; }
+.json-key   { color: #0b5394; font-weight: 600; }
+.json-str   { color: #2d6a4f; }
+.json-num   { color: #6f42c1; }
+.json-bool  { color: #be3144; }
+.json-null  { color: #6b7280; }
+.json-sig   { color: #b91c1c; }
 
 /* Custom dropdown chevron — Tailwind has no built-in. */
 select.form-input {
   appearance: none;
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
-  background-position: right 0.5rem center;
+  background-position: right 0.6rem center;
   background-size: 1rem;
   padding-right: 2rem;
 }
 
-/* The "INVALID" stamp lands with a satisfying thunk. */
-@keyframes stamp-in {
-  0%   { transform: scale(2) rotate(-25deg); opacity: 0; }
-  60%  { transform: scale(0.9) rotate(-12deg); opacity: 1; }
-  100% { transform: scale(1) rotate(-8deg); opacity: 1; }
+/* Diff rows used in the tamper demo. */
+.diff-row {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  word-break: break-all;
 }
-.tamper-stamp {
-  animation: stamp-in 0.6s ease-out;
+.diff-row.before {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.diff-row.after-removed {
+  background: #fef2f2;
+  color: #991b1b;
+  text-decoration: line-through;
+  border: 1px solid #fecaca;
+}
+.diff-row.after-new {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  font-weight: 600;
 }
 
 /* Scrollbar polish. */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #0f172a; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Focus styles: clear and obvious for keyboard navigation (UX4G WCAG). */
+:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+/* Reduce motion respects user preference. */
+@media (prefers-reduced-motion: reduce) {
+  .cascade-step,
+  .cascade-step.shown {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+}

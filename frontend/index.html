@@ -4,211 +4,325 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NANDA Index Explorer</title>
+  <meta name="description" content="Working prototype of the NANDA Index — discover, verify and call AI agents over a signed metadata chain." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- Open Sans is the UX4G default; JetBrains Mono for code blocks. -->
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <!--
     TweetNaCl gives us Ed25519 verify in the browser — same primitive PyNaCl
-    uses server-side. The signature checks the user sees in this demo are
-    the real thing, not server-confirmed-by-API.
+    uses server-side. The signature checks the user sees are the real thing,
+    not a server-confirmed-by-API.
   -->
   <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
-  <!-- @apply directives must live in an inline tailwindcss block to be
-       processed by the Tailwind CDN at runtime. Raw CSS goes in styles.css. -->
-  <style type="text/tailwindcss">
-    .layer-card { @apply rounded-xl border bg-slate-900/50 p-5; }
-    .layer-label { @apply text-[10px] font-semibold uppercase tracking-widest; }
-    .layer-title { @apply text-lg font-semibold mt-1; }
-    .layer-desc { @apply text-xs text-slate-400 mt-2 leading-relaxed; }
-    .layer-port { @apply text-[11px] font-mono text-slate-500 mt-3; }
 
-    .form-input {
-      @apply w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm
-             focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/60;
+  <!-- @apply directives must live in an inline tailwindcss block so the
+       Tailwind CDN's JIT compiler processes them at runtime. -->
+  <style type="text/tailwindcss">
+    /* ===== Layout primitives ===== */
+    .section { @apply mb-10 md:mb-14; }
+    .section-eyebrow {
+      @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-1;
+    }
+    .section-title { @apply text-xl md:text-2xl font-semibold text-slate-900; }
+    .section-desc  { @apply text-sm text-slate-600 mt-1 max-w-3xl; }
+
+    .card {
+      @apply bg-white rounded-lg border border-slate-200 shadow-sm;
+    }
+    .card-padded { @apply p-5 md:p-6; }
+
+    /* ===== Architecture tier cards ===== */
+    .tier-card { @apply card card-padded h-full; }
+    .tier-eyebrow { @apply text-[11px] font-semibold uppercase tracking-widest; }
+    .tier-title   { @apply text-lg font-semibold text-slate-900 mt-1; }
+    .tier-desc    { @apply text-sm text-slate-600 mt-2 leading-relaxed; }
+    .tier-port    { @apply text-xs font-mono text-slate-500 mt-3; }
+
+    /* ===== Buttons (UX4G-style hierarchy) ===== */
+    .btn {
+      @apply inline-flex items-center justify-center gap-1.5 font-semibold text-sm
+             rounded-md px-4 py-2 transition focus:outline-none
+             focus-visible:ring-2 focus-visible:ring-offset-2;
     }
     .btn-primary {
-      @apply bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-medium text-sm
-             px-4 py-2 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed;
+      @apply btn bg-blue-700 text-white hover:bg-blue-800
+             focus-visible:ring-blue-600
+             disabled:opacity-50 disabled:cursor-not-allowed;
     }
     .btn-secondary {
-      @apply border border-slate-700 hover:bg-slate-800 text-slate-100 font-medium text-sm
-             px-3 py-1.5 rounded-md transition;
+      @apply btn bg-white text-slate-800 border border-slate-300
+             hover:bg-slate-50 focus-visible:ring-slate-400;
     }
     .btn-danger {
-      @apply bg-red-500 hover:bg-red-400 text-white font-medium text-sm px-4 py-2 rounded-md transition;
+      @apply btn bg-red-600 text-white hover:bg-red-700
+             focus-visible:ring-red-500;
     }
+    .btn-sm { @apply text-xs px-3 py-1.5 rounded; }
+
+    /* ===== Form controls ===== */
+    .form-label {
+      @apply block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider;
+    }
+    .form-input {
+      @apply w-full bg-white border border-slate-300 rounded-md
+             px-3 py-2 text-sm text-slate-900 placeholder-slate-400
+             focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600;
+    }
+
+    /* ===== Status pills ===== */
     .status-pill {
-      @apply flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-900 border border-slate-800;
+      @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
+             bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700;
     }
     .status-dot { @apply w-2 h-2 rounded-full; }
-    .status-dot.up    { @apply bg-emerald-400; }
-    .status-dot.down  { @apply bg-red-500; }
-    .status-dot.unknown { @apply bg-slate-600; }
+    .status-dot.up      { @apply bg-emerald-500; }
+    .status-dot.down    { @apply bg-red-500; }
+    .status-dot.unknown { @apply bg-slate-300; }
 
+    /* ===== Agent rows ===== */
     .agent-row {
-      @apply rounded-lg border border-slate-800 bg-slate-900/50
-             p-4 flex items-center justify-between gap-4 transition hover:border-slate-700;
+      @apply card card-padded flex flex-col md:flex-row md:items-center md:justify-between gap-4
+             transition hover:border-slate-300 hover:shadow-md;
     }
-    .agent-name { @apply font-mono text-sm font-medium text-cyan-300; }
-    .agent-meta { @apply text-xs text-slate-500 mt-1; }
+    .agent-name {
+      @apply font-mono text-sm font-semibold text-slate-900 break-all;
+    }
+    .agent-meta {
+      @apply text-xs text-slate-500 mt-1 font-mono break-all;
+    }
     .hosting-badge {
-      @apply text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full;
+      @apply text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full border;
     }
-    .hosting-badge.primary { @apply bg-violet-500/15 text-violet-300 border border-violet-500/30; }
-    .hosting-badge.private { @apply bg-amber-500/15 text-amber-300 border border-amber-500/30; }
+    .hosting-badge.primary { @apply bg-violet-50 text-violet-700 border-violet-200; }
+    .hosting-badge.private { @apply bg-amber-50 text-amber-800 border-amber-200; }
 
-    .cascade-step { @apply flex items-start gap-3 p-3 rounded-lg transition-all duration-300; }
-    .cascade-step.success { @apply bg-emerald-500/5 border border-emerald-500/20; }
-    .cascade-step.error   { @apply bg-red-500/5 border border-red-500/20; }
-    .cascade-step.pending { @apply bg-slate-800/40 border border-slate-700; }
+    /* ===== Cascade steps ===== */
+    .cascade-step {
+      @apply flex items-start gap-3 p-3.5 rounded-md border transition-all duration-300;
+    }
+    .cascade-step.pending { @apply bg-slate-50 border-slate-200; }
+    .cascade-step.success { @apply bg-emerald-50/60 border-emerald-200; }
+    .cascade-step.error   { @apply bg-red-50 border-red-200; }
     .step-num {
-      @apply w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0;
+      @apply w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold
+             flex-shrink-0 border;
     }
-    .step-num.success { @apply bg-emerald-500 text-slate-900; }
-    .step-num.error   { @apply bg-red-500 text-white; }
-    .step-num.pending { @apply bg-slate-700 text-slate-300; }
-    .step-title { @apply text-sm font-medium; }
-    .step-detail { @apply text-xs text-slate-400 font-mono mt-1 break-all; }
+    .step-num.pending { @apply bg-slate-100 border-slate-300 text-slate-600; }
+    .step-num.success { @apply bg-emerald-600 border-emerald-600 text-white; }
+    .step-num.error   { @apply bg-red-600 border-red-600 text-white; }
+    .step-title  { @apply text-sm font-semibold text-slate-900; }
+    .step-detail { @apply text-xs text-slate-600 font-mono mt-1 break-all; }
 
+    /* ===== JSON viewer ===== */
     .json-block {
-      @apply font-mono text-xs bg-slate-950 border border-slate-800 rounded-lg p-4 overflow-x-auto leading-relaxed;
+      @apply font-mono text-xs bg-slate-50 border border-slate-200 rounded-md
+             p-4 overflow-x-auto leading-relaxed text-slate-800;
     }
-    .tamper-stamp {
-      @apply inline-block border-4 border-red-500 text-red-500 font-extrabold
-             uppercase tracking-widest px-4 py-1 rounded;
+
+    /* ===== Tamper alert ===== */
+    .alert {
+      @apply rounded-md border p-4 flex items-start gap-3;
     }
-    .diff-row { @apply font-mono text-xs p-2 rounded; }
-    .diff-row.before { @apply bg-slate-800/40 text-slate-400; }
-    .diff-row.after  { @apply bg-red-500/15 text-red-300 line-through; }
-    .diff-row.after-new { @apply bg-red-500/15 text-red-300; }
+    .alert-success { @apply bg-emerald-50 border-emerald-200 text-emerald-900; }
+    .alert-danger  { @apply bg-red-50  border-red-200  text-red-900; }
+    .alert-info    { @apply bg-blue-50 border-blue-200 text-blue-900; }
+    .badge-result {
+      @apply text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded;
+    }
+    .badge-result.ok   { @apply bg-emerald-600 text-white; }
+    .badge-result.fail { @apply bg-red-600 text-white; }
+
+    /* ===== Help block ===== */
+    .help-block {
+      @apply rounded-md border border-amber-200 bg-amber-50 text-amber-900 text-sm p-4;
+    }
   </style>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="bg-slate-950 text-slate-100 antialiased">
+<body class="bg-slate-50 text-slate-900 antialiased">
+  <!-- Skip link for accessibility (UX4G WCAG alignment) -->
+  <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2
+                        focus:bg-white focus:px-3 focus:py-2 focus:rounded focus:border focus:border-slate-300 focus:z-50">
+    Skip to main content
+  </a>
+
   <!-- ============== HEADER ============== -->
-  <header class="border-b border-slate-800 bg-slate-950/95 backdrop-blur sticky top-0 z-10">
-    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 md:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center font-bold text-slate-900">N</div>
+        <div class="w-9 h-9 rounded-md bg-blue-700 flex items-center justify-center font-bold text-white text-lg">N</div>
         <div>
-          <h1 class="text-lg font-semibold tracking-tight">NANDA Index Explorer</h1>
-          <p class="text-xs text-slate-400">Beyond DNS · The Internet of AI Agents</p>
+          <h1 class="text-lg font-semibold text-slate-900">NANDA Index Explorer</h1>
+          <p class="text-xs text-slate-500">Beyond DNS · The Internet of AI Agents</p>
         </div>
       </div>
-      <div id="serviceStatus" class="flex items-center gap-3 text-xs"></div>
+      <div id="serviceStatus" class="flex items-center gap-1.5 flex-wrap" aria-live="polite"></div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-6 py-8 space-y-10">
+  <main id="main" class="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
 
-    <!-- ============== ARCHITECTURE OVERVIEW ============== -->
-    <section>
-      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-3">Architecture</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="layer-card border-cyan-500/30">
-          <div class="layer-label text-cyan-400">Tier 1 · Anchor</div>
-          <div class="layer-title">Lean Index</div>
-          <div class="layer-desc">Tiny signed record per agent. Returns a verifiable <code>AgentAddr</code> pointing to where the rich metadata lives.</div>
-          <div class="layer-port">localhost:8000</div>
-        </div>
-        <div class="layer-card border-violet-500/30">
-          <div class="layer-label text-violet-400">Tier 2 · Metadata</div>
-          <div class="layer-title">AgentFacts Hosts</div>
-          <div class="layer-desc">Stores signed JSON-LD documents with capabilities, skills, endpoints. Two flavors: agent-owned (primary) and third-party (private).</div>
-          <div class="layer-port">localhost:8001 &amp; :8002</div>
-        </div>
-        <div class="layer-card border-emerald-500/30">
-          <div class="layer-label text-emerald-400">Tier 3 · Runtime</div>
-          <div class="layer-title">Agent Endpoints</div>
-          <div class="layer-desc">Where the actual work happens. The client only calls these <em>after</em> verifying both signatures upstream.</div>
-          <div class="layer-port">localhost:8010 &amp; :8011</div>
-        </div>
+    <!-- ============== INTRO ============== -->
+    <section class="section">
+      <p class="section-eyebrow">Live prototype</p>
+      <h2 class="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight max-w-3xl">
+        A signed metadata chain for discovering and trusting AI agents.
+      </h2>
+      <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
+        The client resolves an agent name, follows it to a signed
+        <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">AgentAddr</code>
+        from the index, fetches the agent's signed
+        <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">AgentFacts</code>,
+        verifies both signatures in the browser using
+        <span class="text-slate-800 font-medium">Ed25519</span>, and only then
+        calls the endpoint. Every check below is real.
+      </p>
+    </section>
+
+    <!-- ============== ARCHITECTURE ============== -->
+    <section class="section">
+      <p class="section-eyebrow">Architecture</p>
+      <h3 class="section-title">Three tiers, one chain of custody</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+        <article class="tier-card">
+          <p class="tier-eyebrow text-blue-700">Tier 1 · Anchor</p>
+          <h4 class="tier-title">Lean Index</h4>
+          <p class="tier-desc">
+            Tiny signed record per agent. Returns a verifiable
+            <code class="text-xs">AgentAddr</code> pointing to where the rich
+            metadata lives.
+          </p>
+          <p class="tier-port">localhost:8000</p>
+        </article>
+
+        <article class="tier-card">
+          <p class="tier-eyebrow text-violet-700">Tier 2 · Metadata</p>
+          <h4 class="tier-title">AgentFacts Hosts</h4>
+          <p class="tier-desc">
+            Stores signed JSON-LD documents with capabilities, skills and
+            endpoints. Two flavors: agent-owned (primary) and third-party
+            (private).
+          </p>
+          <p class="tier-port">localhost:8001 &amp; :8002</p>
+        </article>
+
+        <article class="tier-card">
+          <p class="tier-eyebrow text-emerald-700">Tier 3 · Runtime</p>
+          <h4 class="tier-title">Agent Endpoints</h4>
+          <p class="tier-desc">
+            Where the actual work happens. The client only calls these
+            <em>after</em> verifying both signatures upstream.
+          </p>
+          <p class="tier-port">localhost:8010 &amp; :8011</p>
+        </article>
       </div>
     </section>
 
     <!-- ============== AGENT REGISTRY ============== -->
-    <section>
-      <div class="flex items-end justify-between mb-3">
+    <section class="section">
+      <div class="flex items-end justify-between gap-4 flex-wrap mb-2">
         <div>
-          <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400">Registered Agents</h2>
-          <p class="text-xs text-slate-500 mt-1">Two demo agents covering both registration styles from the paper's "quilt" model.</p>
+          <p class="section-eyebrow">Registered agents</p>
+          <h3 class="section-title">The "quilt" model in two demo records</h3>
+          <p class="section-desc">
+            One agent uses an agent-owned facts host; the other delegates to a
+            third-party host — both registration styles from the paper.
+          </p>
         </div>
-        <button id="refreshBtn" class="text-xs px-3 py-1.5 rounded-md border border-slate-700 hover:bg-slate-800 transition">Refresh</button>
+        <button id="refreshBtn" class="btn-secondary btn-sm">Refresh</button>
       </div>
-      <div id="agentList" class="space-y-2"></div>
-      <div id="noAgentsHelp" class="hidden mt-4 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
-        <strong>No agents registered yet.</strong> Run the bootstrap script in your terminal:
-        <pre class="mt-2 text-xs bg-slate-900/60 p-2 rounded">python scripts/bootstrap.py</pre>
-        then hit Refresh.
+      <div id="agentList" class="space-y-3 mt-4"></div>
+      <div id="noAgentsHelp" class="hidden mt-4 help-block">
+        <strong>No agents registered yet.</strong>
+        Run the bootstrap script in your terminal:
+        <pre class="mt-2 text-xs bg-white border border-amber-200 px-3 py-2 rounded">python scripts/bootstrap.py</pre>
+        then click Refresh.
       </div>
     </section>
 
     <!-- ============== RESOLUTION CASCADE ============== -->
-    <section>
-      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-1">Resolution Flow</h2>
-      <p class="text-xs text-slate-500 mb-3">
-        Click <em>Resolve</em> on any agent above. Each step runs a real HTTP fetch
-        and a real Ed25519 signature check, in the browser.
+    <section class="section">
+      <p class="section-eyebrow">Resolution flow</p>
+      <h3 class="section-title">Walk the chain · verify in the browser</h3>
+      <p class="section-desc">
+        Click <em>Resolve</em> on any agent above. Each step runs a real HTTP
+        fetch and a real Ed25519 verification — no server is asked to vouch
+        for itself.
       </p>
-      <div id="resolutionPanel" class="rounded-xl border border-slate-800 bg-slate-900/50 p-6 min-h-[200px]">
-        <p class="text-slate-500 text-sm text-center py-8">
-          Select an agent above and click <span class="text-cyan-400">Resolve</span> to watch the chain unfold.
+      <div id="resolutionPanel" class="card card-padded min-h-[180px] mt-4">
+        <p class="text-sm text-slate-500 text-center py-10">
+          Select an agent above and click <span class="text-blue-700 font-medium">Resolve</span> to watch the chain unfold.
         </p>
       </div>
     </section>
 
     <!-- ============== CALL AGENT ============== -->
-    <section>
-      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-3">Call Agent</h2>
-      <div class="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+    <section class="section">
+      <p class="section-eyebrow">Call an agent</p>
+      <h3 class="section-title">Resolve, verify, then send</h3>
+      <p class="section-desc">
+        We re-run the full resolution chain before every call. If anything fails to
+        verify, the call doesn't happen.
+      </p>
+
+      <div class="card card-padded mt-4">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="md:col-span-1">
-            <label class="block text-xs text-slate-400 mb-1">Agent</label>
+            <label for="callAgentSelect" class="form-label">Agent</label>
             <select id="callAgentSelect" class="form-input"></select>
           </div>
           <div class="md:col-span-2">
-            <label class="block text-xs text-slate-400 mb-1">Message</label>
-            <div class="flex gap-2">
+            <label for="callMessage" class="form-label">Message</label>
+            <div class="flex flex-col sm:flex-row gap-2">
               <input id="callMessage" type="text" value="hello from the browser"
                      class="form-input flex-1" placeholder="message to send" />
-              <button id="callBtn" class="btn-primary">Resolve &amp; Call</button>
+              <button id="callBtn" class="btn-primary whitespace-nowrap">Resolve &amp; Call</button>
             </div>
           </div>
         </div>
-        <div id="callResult" class="mt-4 hidden"></div>
+        <div id="callResult" class="mt-5 hidden"></div>
       </div>
     </section>
 
     <!-- ============== TAMPER DEMO ============== -->
-    <section>
-      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-1">Tamper Detection</h2>
-      <p class="text-xs text-slate-500 mb-3">
+    <section class="section">
+      <p class="section-eyebrow text-red-700">Security demo</p>
+      <h3 class="section-title">Tamper detection</h3>
+      <p class="section-desc">
         Simulates a man-in-the-middle swapping the endpoint URL inside a signed
-        <code>AgentFacts</code>. The client must reject the mutated document.
+        <code class="text-xs">AgentFacts</code> document. The client must reject the
+        mutated version.
       </p>
-      <div class="rounded-xl border border-red-900/40 bg-gradient-to-br from-red-950/20 to-slate-900/50 p-6">
-        <div class="flex items-center justify-between gap-4 flex-wrap">
+
+      <div class="card card-padded mt-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div class="text-sm font-semibold">Simulate man-in-the-middle attack</div>
-            <div class="text-xs text-slate-400 mt-1">
-              Fetches a real signed document, mutates one field, re-runs the verifier.
-            </div>
+            <p class="font-semibold text-slate-900">Simulate man-in-the-middle attack</p>
+            <p class="text-sm text-slate-600 mt-1">
+              Fetches a real signed document, mutates one field, re-runs the
+              verifier.
+            </p>
           </div>
-          <div class="flex gap-2 items-center">
-            <select id="tamperAgentSelect" class="form-input text-sm"></select>
-            <button id="tamperBtn" class="btn-danger">Run attack</button>
+          <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+            <select id="tamperAgentSelect" class="form-input text-sm sm:w-72"></select>
+            <button id="tamperBtn" class="btn-danger whitespace-nowrap">Run attack</button>
           </div>
         </div>
         <div id="tamperResult" class="mt-5 hidden"></div>
       </div>
     </section>
 
-    <footer class="text-center text-xs text-slate-600 pt-8 pb-4">
-      Built for the NANDA challenge ·
-      <a href="https://github.com/" class="underline hover:text-slate-400">repo</a> ·
-      <a href="/docs" class="underline hover:text-slate-400">Index API docs</a>
+    <footer class="text-center text-xs text-slate-500 pt-8 border-t border-slate-200 mt-12">
+      <p>
+        Built for the NANDA challenge ·
+        <a href="/docs" class="text-blue-700 hover:underline font-medium">Index API docs</a> ·
+        <a href="https://arxiv.org/pdf/2507.14263" class="text-blue-700 hover:underline font-medium" target="_blank" rel="noopener">paper (PDF)</a>
+      </p>
+      <p class="mt-2 text-slate-400">© 2026 NANDA demo · UX based on UX4G principles · No data is stored beyond the local SQLite file.</p>
     </footer>
   </main>
 

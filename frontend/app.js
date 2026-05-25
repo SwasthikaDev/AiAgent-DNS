@@ -138,7 +138,10 @@ async function loadAgents() {
     }
     populateAgentSelects();
   } catch (e) {
-    list.innerHTML = `<div class="text-red-400 text-sm">Failed to reach the index at ${CFG.INDEX_URL}. Is the stack running?</div>`;
+    list.innerHTML = `<div class="alert alert-danger text-sm">
+      <strong>Can't reach the index at ${CFG.INDEX_URL}.</strong>
+      Make sure <code>docker compose up</code> is running.
+    </div>`;
   }
 }
 
@@ -149,23 +152,23 @@ function renderAgentRow(a) {
     : `<span class="hosting-badge primary">primary host</span>`;
   const factsUrl = isPrivate ? a.private_facts_url : a.primary_facts_url;
   return `
-    <div class="agent-row">
+    <article class="agent-row">
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-3 flex-wrap">
           <span class="agent-name">${a.agent_name}</span>
           ${badge}
         </div>
         <div class="agent-meta truncate">
-          <span class="mono text-slate-600">${a.agent_id}</span>
-          <span class="mx-2 text-slate-700">·</span>
-          <span class="mono text-slate-500">${factsUrl}</span>
+          <span>${a.agent_id}</span>
+          <span class="mx-2 text-slate-400">·</span>
+          <span>${factsUrl}</span>
         </div>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-shrink-0">
         <button data-action="resolve" data-agent="${a.agent_name}" class="btn-secondary">Resolve</button>
         <button data-action="call" data-agent="${a.agent_name}" class="btn-primary">Call</button>
       </div>
-    </div>
+    </article>
   `;
 }
 
@@ -268,13 +271,13 @@ async function runResolutionCascade(agentName, options = {}) {
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
-    `pubkey&nbsp;<span class="text-cyan-400">${indexPub.slice(0, 28)}…</span>`;
+    `pubkey&nbsp;<span class="text-blue-700 font-semibold">${indexPub.slice(0, 28)}…</span>`;
   await sleep(350);
 
   // 2) resolve to AgentAddr
   appendStep(host, {
     num: 2, total,
-    title: `Resolve <span class="text-cyan-300 mono">${agentName}</span>`,
+    title: `Resolve <span class="text-blue-700 font-mono">${agentName}</span>`,
     detail: `GET ${CFG.INDEX_URL}/resolve/${agentName}`,
     status: "pending",
   });
@@ -292,7 +295,7 @@ async function runResolutionCascade(agentName, options = {}) {
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
-    `agent_id&nbsp;<span class="text-violet-300">${addr.agent_id}</span>`;
+    `agent_id&nbsp;<span class="text-violet-700 font-semibold">${addr.agent_id}</span>`;
   await sleep(350);
 
   // 3) verify AgentAddr
@@ -308,7 +311,7 @@ async function runResolutionCascade(agentName, options = {}) {
   host.lastChild.querySelector(".step-num").textContent = addrOK ? "✓" : "✗";
   if (!addrOK) {
     host.lastChild.querySelector(".step-detail").innerHTML =
-      `<span class="text-red-400">signature INVALID — index would be impersonated</span>`;
+      `<span class="text-red-700 font-semibold">signature INVALID — index would be impersonated</span>`;
     return null;
   }
   await sleep(350);
@@ -338,7 +341,7 @@ async function runResolutionCascade(agentName, options = {}) {
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
-    `label&nbsp;<span class="text-amber-300">"${facts.label}"</span>`;
+    `label&nbsp;<span class="text-amber-700 font-semibold">"${facts.label}"</span>`;
   await sleep(350);
 
   // 5) verify AgentFacts with the agent's public key (from AgentAddr)
@@ -354,7 +357,7 @@ async function runResolutionCascade(agentName, options = {}) {
   host.lastChild.querySelector(".step-num").textContent = factsOK ? "✓" : "✗";
   if (!factsOK) {
     host.lastChild.querySelector(".step-detail").innerHTML =
-      `<span class="text-red-400">facts signature INVALID — refusing to trust endpoint</span>`;
+      `<span class="text-red-700 font-semibold">facts signature INVALID — refusing to trust endpoint</span>`;
     return null;
   }
   await sleep(200);
@@ -369,14 +372,14 @@ async function runResolutionCascade(agentName, options = {}) {
 
   // Endpoint banner
   const banner = document.createElement("div");
-  banner.className =
-    "mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 flex items-center justify-between gap-4";
+  banner.className = "alert alert-success mt-5";
   banner.innerHTML = `
+    <span class="badge-result ok">verified</span>
     <div>
-      <div class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">Trust chain complete</div>
-      <div class="text-sm mt-1">
-        Safe to call endpoint:
-        <span class="mono text-emerald-300">${facts.endpoints.static[0]}</span>
+      <div class="font-semibold">Trust chain complete</div>
+      <div class="text-sm mt-0.5">
+        Safe to call endpoint
+        <span class="font-mono text-emerald-900 font-semibold">${facts.endpoints.static[0]}</span>
       </div>
     </div>
   `;
@@ -391,16 +394,16 @@ $("#callBtn").addEventListener("click", async () => {
   const message = $("#callMessage").value || "hello from the browser";
   const resultBox = $("#callResult");
   resultBox.classList.remove("hidden");
-  resultBox.innerHTML = `<div class="text-sm text-slate-400">Resolving agent…</div>`;
+  resultBox.innerHTML = `<div class="text-sm text-slate-500">Resolving agent…</div>`;
 
   const resolved = await runResolutionCascade(name);
   if (!resolved) {
-    resultBox.innerHTML = `<div class="text-sm text-red-400">Resolution failed; refusing to call.</div>`;
+    resultBox.innerHTML = `<div class="alert alert-danger text-sm">Resolution failed; refusing to call.</div>`;
     return;
   }
   const endpoint = resolved.facts.endpoints.static[0];
 
-  resultBox.innerHTML = `<div class="text-sm text-slate-400">POST ${endpoint} …</div>`;
+  resultBox.innerHTML = `<div class="text-sm text-slate-500">POST ${endpoint} …</div>`;
   try {
     const r = await fetch(endpoint, {
       method: "POST",
@@ -409,11 +412,11 @@ $("#callBtn").addEventListener("click", async () => {
     });
     const body = await r.json();
     resultBox.innerHTML = `
-      <div class="text-xs uppercase tracking-widest text-slate-500 mb-1">Response from ${endpoint}</div>
+      <p class="text-xs uppercase tracking-widest text-slate-500 mb-1.5 font-semibold">Response from <span class="font-mono text-slate-700">${endpoint}</span></p>
       <div class="json-block">${renderJson(body)}</div>
     `;
   } catch (e) {
-    resultBox.innerHTML = `<div class="text-sm text-red-400">Call failed: ${e.message}</div>`;
+    resultBox.innerHTML = `<div class="alert alert-danger text-sm">Call failed: ${e.message}</div>`;
   }
 });
 
@@ -430,7 +433,7 @@ $("#tamperBtn").addEventListener("click", async () => {
     addr = await fetchAddr(name);
     facts = await fetchFacts(addr.primary_facts_url);
   } catch (e) {
-    out.innerHTML = `<div class="text-sm text-red-400">Setup failed: ${e.message}</div>`;
+    out.innerHTML = `<div class="alert alert-danger text-sm">Setup failed: ${e.message}</div>`;
     return;
   }
 
@@ -443,27 +446,34 @@ $("#tamperBtn").addEventListener("click", async () => {
 
   out.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <div class="text-xs uppercase tracking-widest text-emerald-400 font-semibold mb-1">Step 1 · Original signed facts</div>
-        <div class="text-xs text-slate-400 mb-2">Verification: <span class="text-emerald-400 font-semibold">${originallyValid ? "VALID ✓" : "FAILED"}</span></div>
+      <section class="border border-slate-200 rounded-md p-4 bg-white">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs uppercase tracking-widest font-semibold text-slate-700">Step 1 · Original signed facts</p>
+          <span class="badge-result ${originallyValid ? "ok" : "fail"}">${originallyValid ? "valid" : "failed"}</span>
+        </div>
         <div class="diff-row before">"endpoints.static[0]": "${originalEndpoint}"</div>
-      </div>
-      <div>
-        <div class="text-xs uppercase tracking-widest text-red-400 font-semibold mb-1">Step 2 · After MITM tampering</div>
-        <div class="text-xs text-slate-400 mb-2">Verification: <span class="text-red-400 font-semibold">${tamperedValid ? "VALID (BUG)" : "INVALID ✗"}</span></div>
-        <div class="diff-row after">"endpoints.static[0]": "${originalEndpoint}"</div>
-        <div class="diff-row after-new mt-1">"endpoints.static[0]": "http://evil.example.com/steal"</div>
-      </div>
+      </section>
+
+      <section class="border border-red-200 rounded-md p-4 bg-red-50/50">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs uppercase tracking-widest font-semibold text-red-700">Step 2 · After MITM tampering</p>
+          <span class="badge-result ${tamperedValid ? "ok" : "fail"}">${tamperedValid ? "valid (BUG)" : "invalid"}</span>
+        </div>
+        <div class="diff-row after-removed">"endpoints.static[0]": "${originalEndpoint}"</div>
+        <div class="diff-row after-new mt-1.5">"endpoints.static[0]": "http://evil.example.com/steal"</div>
+      </section>
     </div>
 
-    <div class="mt-6 flex items-start gap-4">
-      <div class="tamper-stamp">Signature invalid</div>
-      <div class="text-sm text-slate-300 leading-relaxed">
-        The attacker can swap any field in the JSON document, but cannot forge a
-        new Ed25519 signature without the agent's private key. The client
-        re-canonicalises the mutated document, runs <code>nacl.sign.detached.verify</code>
-        in the browser, sees the mismatch, and refuses to call
-        <span class="mono text-red-300">evil.example.com</span>.
+    <div class="alert alert-danger mt-5">
+      <span class="badge-result fail">rejected</span>
+      <div class="text-sm leading-relaxed">
+        <strong>Client refused the call.</strong>
+        An attacker can mutate any field in the JSON, but cannot forge a new
+        Ed25519 signature without the agent's private key. The client
+        re-canonicalises the mutated document, runs
+        <code>nacl.sign.detached.verify</code> in the browser, and rejects it
+        before it can hit
+        <span class="font-mono">evil.example.com</span>.
       </div>
     </div>
   `;
