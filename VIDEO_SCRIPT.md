@@ -29,13 +29,14 @@ If you can deliver that in one breath, you can deliver the video.
 
 ---
 
-## Three lines to commit to memory
+## Four lines to commit to memory
 
-If you forget everything else, remember **these three lines** in order. Each one signals you understood a specific thing about the paper. Saying all three across five minutes is more powerful than saying "I studied the paper" once.
+If you forget everything else, remember **these four lines**. Each one signals you understood a specific thing — about the paper, about the system, or about how to lead a team. Hitting all four across the video is more powerful than saying "I studied the paper" once.
 
-1. *"Same Ed25519 primitive that W3C Verifiable Credentials are built on, signed over RFC 8785 canonical JSON."*
-2. *"The privacy path from Section VII is a real path, not a config flag."*
-3. *"I'd rather defend a small system clearly than a half-finished large one."*
+1. *"Same Ed25519 primitive that W3C Verifiable Credentials are built on, signed over RFC 8785 canonical JSON."* — proves you read §VII.
+2. *"The privacy path from Section VII is a real path, not a config flag."* — proves you implemented it.
+3. *"The architecture is designed to contain blast radius."* — proves you think about failure modes, not just happy paths.
+4. *"I'd rather defend a small system clearly than a half-finished large one."* — proves you can lead.
 
 ---
 
@@ -90,19 +91,21 @@ Because the answer to *that* is the answer to whether we'd work well together."
 
 ---
 
-### 🎬 Section 2 — Who I am, in 30 seconds (0:20 – 0:50) · voiceover with UI in frame
+### 🎬 Section 2 — Who I am, in 40 seconds (0:20 – 1:00) · voiceover with UI in frame
 
 > *Speak conversationally — like you're explaining over coffee.*
 
-"Quick context on me. I've spent the last **[X years]** building **[backend systems / distributed services / what you've actually built]**. My background is **[your real role — e.g., 'full-stack engineering at a fintech', 'platform team at a SaaS company', whatever's true]**.
+"Quick context on me. I've spent the last **[X years]** building **[backend systems / distributed services / what you've actually built]**. My current role is at **[Calyrex]** — and one thing I want to flag early is that **we run our own on-premise infrastructure** there, not just cloud. So when this paper talks about agents being hosted on agent-owned domains, on third-party hosts, or on neutral public infrastructure, those aren't abstractions to me. I've spent real time on the trade-offs — who hosts what, who trusts whom, what fails when a region goes down.
 
 What pulled me into this challenge isn't that I needed *a* job. It's that the NANDA paper points at a problem I've quietly believed for two years — that we are about to ask the existing internet to do something it wasn't designed for. And nobody is treating that as an emergency yet."
 
 > *Emphasize **"nobody is treating that as an emergency."** Brief pause.*
 
+> **Personalization note:** confirm `[Calyrex]` spelling and adjust if needed. The whole point of this beat is to land "I have real infra experience, not just toy-project experience" — swap in whatever framing makes that true for you.
+
 ---
 
-### 🎬 Section 3 — The problem, made relatable (0:50 – 1:25) · back to face
+### 🎬 Section 3 — The problem, made relatable (1:00 – 1:35) · back to face
 
 > *Lean in slightly. This is the moment to be a teacher, not a candidate.*
 
@@ -120,7 +123,7 @@ That's what the NANDA paper proposes. And that's what I built."
 
 ---
 
-### 🎬 Section 4 — Why I started building (1:25 – 1:50) · screen share with brief face cut-in
+### 🎬 Section 4 — Why I started building (1:35 – 2:00) · screen share with brief face cut-in
 
 > *Voice slightly warmer, like you're admitting something.*
 
@@ -134,7 +137,7 @@ I wrote that decision down before I wrote any code. It's in the repo as `PLAN.md
 
 ---
 
-### 🎬 Section 5 — The product, walked through live (1:50 – 3:00) · screen share, narrate the demo
+### 🎬 Section 5 — The product, walked through live (2:00 – 3:10) · screen share, narrate the demo
 
 > *This is the headline. Slow down. Let the animations breathe.*
 
@@ -170,17 +173,17 @@ That, in one click, is the whole security argument of the paper, demonstrated li
 
 ---
 
-### 🎬 Section 6 — How it works (3:00 – 3:30) · back to face
+### 🎬 Section 6 — How it works (3:10 – 3:45) · back to face
 
 > *Calmer pace. You're proving you actually understand it.*
 
-"Architecturally — three layers, mapped directly to the paper. A **lean index** that returns signed `AgentAddr` records, the way Section IV describes. **AgentFacts documents** signed independently and hosted on separate services — primary and private — so the privacy path from Section VII is a *real* path, not a config flag. And the **endpoints** themselves, only called after both signatures verify in sequence.
+"Architecturally — three layers, mapped directly to the paper. A **lean index** that returns signed `AgentAddr` records, the way Section IV describes. **AgentFacts documents**, issued as W3C Verifiable Credentials with a `DataIntegrityProof`, hosted on separate services — primary and private — so the privacy path from Section VII is a *real* path, not a config flag. And the **endpoints**, only called after every signature verifies in sequence.
 
-Stack-wise: Python with FastAPI for the services, SQLite because there's no reason to run a database server for 500-byte records, and TweetNaCl in the browser so the verification you just saw is genuinely client-side. The CLI and the web UI use the same canonical JSON encoding, so signatures verify in both places."
+One more thing on the hosting model. The paper explicitly supports three deployment topologies — agent-owned, third-party, and neutral public infrastructure. This MVP runs all three side by side: the primary host plays the agent-owned role, the private host plays the third-party role, and the Adaptive Resolver plays the role of a neutral runtime authority. In production, an enterprise like ours would pick the mix based on who they trust with what."
 
 ---
 
-### 🎬 Section 6.5 — What I shipped, what I cut, why (3:30 – 4:00) · face, calm and confident
+### 🎬 Section 6.5 — What I shipped, what I cut, why (3:45 – 4:15) · face, calm and confident
 
 > *This is the move. Read it slowly. Don't apologize for any of it. Each cut is reasoned.*
 
@@ -194,7 +197,21 @@ Every cut is in `PLAN.md` section nine, with the reasoning. **I'd rather defend 
 
 ---
 
-### 🎬 Section 7 — Challenges and lessons (4:00 – 4:25) · face, slightly more reflective
+### 🎬 Section 6.7 — Risk model · what fails if one bad actor enters (4:15 – 4:45) · face, serious
+
+> *Slow down. This is the part where you sound like an engineer who has been on-call, not just one who has built features. Don't be alarmist — be calibrated.*
+
+"One thing I want to talk about that the paper hints at but doesn't dramatize. The honest danger with any agent registry is: **what happens when one malicious agent gets in?** A flat trust model where every registered agent is implicitly trustworthy — a single bad actor can spoof capabilities, impersonate a known provider, poison a supply chain, or quietly reroute traffic to themselves. By accident *or* by intent.
+
+The architecture is designed to contain blast radius. **Per-agent keys** — compromising one agent doesn't compromise the index. **Independent index signatures** — a compromised facts host can't reroute the chain, because the AgentAddr was signed by a different key. **Short TTLs** — even a successful attack has a five-minute window, not forever-in-DNS-cache. And **W3C VC-Status revocation** — which I've put in the 90-day roadmap, not yet shipped — gives sub-second pull-the-plug capability when something is detected.
+
+What's not solved yet, honestly: there's no Sybil prevention on `/register`, no issuer trust scoring, no rate-limiting. Those are real gaps. They're called out in `PLAN.md`, and the first item in the roadmap is closing them."
+
+> *Brief pause. Land on the calibrated, serious tone — not selling, just stating.*
+
+---
+
+### 🎬 Section 7 — Challenges and lessons (4:45 – 5:10) · face, slightly more reflective
 
 > *Honesty mode. This is where most candidates over-polish. Don't.*
 
@@ -208,7 +225,7 @@ Second — I had to **resist scope creep constantly**. Every time I solved one l
 
 ---
 
-### 🎬 Section 8 — Where this goes next (4:25 – 4:45) · face, energy lifts
+### 🎬 Section 8 — Where this goes next (5:10 – 5:30) · face, energy lifts
 
 > *Confident but not hype-y.*
 
@@ -220,7 +237,7 @@ That's the direction the paper hints at in its future-work section, and I want t
 
 ---
 
-### 🎬 Section 9 — Close (4:45 – 5:00) · face, calm, direct
+### 🎬 Section 9 — Close (5:30 – 5:45) · face, calm, direct
 
 > ***Lower your pace. Look straight into the lens.** This is the line they'll remember.*
 
@@ -243,16 +260,19 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 | Section | Window | Length | Mode |
 |---|---|---|---|
 | 1 — Opening hook | 0:00 – 0:20 | 20 s | Face |
-| 2 — Who I am | 0:20 – 0:50 | 30 s | Voice over UI |
-| 3 — The problem | 0:50 – 1:25 | 35 s | Face |
-| 4 — Why I built | 1:25 – 1:50 | 25 s | Screen + face cut |
-| 5 — Live demo (with VC note) | 1:50 – 3:00 | 70 s | Screen, narrated |
-| 6 — How it works | 3:00 – 3:30 | 30 s | Face |
-| **6.5 — What I shipped vs cut** | **3:30 – 4:00** | **30 s** | **Face (the move)** |
-| 7 — Challenges | 4:00 – 4:25 | 25 s | Face |
-| 8 — SuperAI vision | 4:25 – 4:45 | 20 s | Face |
-| 9 — Close | 4:45 – 5:00 | 15 s | Face |
-| **Total** | | **5:00** | |
+| 2 — Who I am (incl. infra credibility) | 0:20 – 1:00 | 40 s | Voice over UI |
+| 3 — The problem | 1:00 – 1:35 | 35 s | Face |
+| 4 — Why I built | 1:35 – 2:00 | 25 s | Screen + face cut |
+| 5 — Live demo (with VC note) | 2:00 – 3:10 | 70 s | Screen, narrated |
+| 6 — How it works (incl. hosting models) | 3:10 – 3:45 | 35 s | Face |
+| **6.5 — What I shipped vs cut** | **3:45 – 4:15** | **30 s** | **Face (the move)** |
+| **6.7 — Risk model / blast radius** | **4:15 – 4:45** | **30 s** | **Face (serious)** |
+| 7 — Challenges | 4:45 – 5:10 | 25 s | Face |
+| 8 — SuperAI vision | 5:10 – 5:30 | 20 s | Face |
+| 9 — Close | 5:30 – 5:45 | 15 s | Face |
+| **Total** | | **5:45** | |
+
+> **If you need to hit a hard 5:00 cap:** drop Section 4 entirely (the "I almost overscoped" beat moves into Section 6.5 implicitly). That saves 25 s and the script lands at 5:20 — close enough.
 
 ---
 
@@ -267,6 +287,7 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 | 5 | Demo | UI cascade animating, then tamper section |
 | 6 | How it works | You, calmer |
 | 6.5 | Shipped vs cut | You, calm and confident |
+| **6.7** | **Risk model** | **You, serious — the "VP signal" moment** |
 | 7 | Challenges | You, reflective |
 | 8 | Vision | You, energy lifting |
 | 9 | Close | You, slow and direct |
@@ -277,21 +298,26 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 
 ### Places to **pause** — don't rush past these
 
-- After *"nobody is treating that as an emergency yet"* (0:50)
-- After the green checks finish animating (~2:35)
-- After the red INVALID stamp lands (~2:55) — **one full second**
-- After *"defend a small system clearly than a half-finished large one"* (~4:00) — **two seconds**
-- After *"harder than the engineering"* (~4:25)
-- Before *"Thank you"* (~4:58) — **two full seconds**
+- After *"nobody is treating that as an emergency yet"* (~1:00)
+- After the green checks finish animating (~2:45)
+- After the red INVALID stamp lands (~3:05) — **one full second**
+- After *"defend a small system clearly than a half-finished large one"* (~4:15) — **two seconds**
+- After *"by accident or by intent"* (~4:25) — **one full second**, lets the threat-model framing land
+- After *"first item in the roadmap is closing them"* (~4:45)
+- Before *"Thank you"* (~5:43) — **two full seconds**
 
 ### Places to **emphasize** — gentle stress, not volume
 
+- "**we run our own on-premise infrastructure**"
 - "**why** I built it the way I did"
 - "**in your browser**, using TweetNaCl"
 - "**same Ed25519 primitive** that W3C Verifiable Credentials are built on"
 - "**deliberately not build**"
 - "**real path, not a config flag**"
 - "**defend a small system clearly**"
+- "**what happens when one malicious agent gets in?**"
+- "**contain blast radius**"
+- "**by accident *or* by intent**"
 - "**two weeks**" (before SuperAI mention)
 - "**right now**, in papers and prototypes and hackathons"
 
@@ -302,11 +328,13 @@ If that's the kind of person you're looking for, my code is in the repo, my plan
 | Section | Mode | Why |
 |---|---|---|
 | Opening | Warm + direct | Sets you apart from canned intros |
+| Who I am | Grounded, specific | "On-prem infra" line signals you've worked on real systems |
 | Problem | Teacher mode | Shows you understand it, not just memorized it |
 | Why I built | Slight vulnerability | The "I almost overscoped" line is memorable |
 | Demo | Confident, slow | Let visuals do work. Don't over-narrate. |
 | How it works | Calm, precise | Proves technical depth without lecturing |
 | **What I cut** | **Confident, no apology** | **The single most senior moment in the video** |
+| **Risk model** | **Serious, calibrated** | **Engineers who don't think about failure don't get hired as VP** |
 | Challenges | Honest, low-key | Separates you from candidates who pretend nothing was hard |
 | Vision | Forward-leaning | SuperAI mention is your strongest credibility signal |
 | Close | Slow + still | A pause before "thank you" is worth more than 5 extra sentences |
@@ -336,6 +364,18 @@ Three questions are most likely after this video. Memorize these short answers �
 ### Bonus Q. "What stops me from registering a fake agent?"
 
 > "In this MVP, nothing — `/register` is open. That's an honest scope cut. The paper's answer is W3C Verifiable Credentials issued by trusted authorities. In a real deployment you'd require a credential from a recognized issuer for sensitive namespaces, with revocation via VC-Status lists."
+
+### Q4. "What's your threat model? What if one bad agent gets in?"
+
+> "Three layers of containment. First, per-agent keys — compromising one agent doesn't compromise the index. Second, independent signatures at every hop — index, agent, resolver each sign with separate keys, so a compromised facts host can't reroute the chain. Third, short TTLs — even a successful attack has a five-minute window, not forever-in-cache. The paper's §VII trust primitive and the W3C VC-Status revocation list, which is in my roadmap, close the last gap with sub-second revocation. What's not solved yet: Sybil prevention on `/register`, issuer trust scoring, rate limiting. Real gaps, called out in `PLAN.md`."
+
+### Q5. "On hosting — which deployment model would you recommend for an enterprise?"
+
+> "Depends on the regulatory posture. For an enterprise with strict data-residency rules — most banks, government — agent-owned hosting on their own infrastructure is the only viable path; the privacy path then lets external clients resolve without hitting the enterprise network. For a developer-facing product, neutral public hosting via NANDA is the easiest start. For a consortium, federated industry hosting per the paper's §VIII.A.2. The architecture deliberately doesn't force one model — that's its strongest feature, in my opinion."
+
+### Q6. "How would you operationalize this if you got hired tomorrow?"
+
+> "Three things in the first 30 days. One: turn the reference implementation into something we can actually run a public testnet on — sharded KV instead of SQLite, OpenTelemetry traces, a real revocation list. Two: stand up that testnet so external teams have an always-on registry to point their agents at. Three: get one interop demo done with MCP, A2A, or NLWeb. Full plan is in `ROADMAP.md` in the repo — happy to walk through it."
 
 ---
 
@@ -378,19 +418,27 @@ So the video stays believable and you stay defensible:
 
 ```
 To: ashutosh@agenticnet.org
-Subject: NANDA VP of Engineering — submission from [Swasthika]
+Subject: NANDA VP of Engineering — submission from Swasthika
 
 Hi,
 
-Submitting the NANDA Index challenge:
+Submitting the NANDA Index challenge.
 
-  • Repo: https://github.com/[you]/projectNanda  (public, full commit history)
-  • Walkthrough video (5 min): https://www.loom.com/share/[id]
-  • Quickstart in README; PLAN.md has scope decisions and explicit non-goals.
+  • Repo: https://github.com/SwasthikaDev/AiAgent-DNS  (public, 25+ phased commits)
+  • Walkthrough video (~5 min): https://www.loom.com/share/[id]
+  • Quickstart in README; PLAN.md has scope decisions and explicit non-goals;
+    ROADMAP.md is my first-90-days-as-VP-of-Engineering plan.
+
+The short version of what's in there:
+  - Lean index + W3C VC v2 AgentFacts (DataIntegrityProof, eddsa-jcs-2022)
+  - Dual-host privacy path; Adaptive Resolver (§VI) with signed routing tokens
+  - In-browser Ed25519 verification (UI under /ui/) + CLI for technical depth
+  - CI on GitHub Actions, Fly.io config ready
+  - Three demo agents covering primary, private, and adaptive-routed flows
 
 Happy to walk through any of it live.
 
-[Swasthika]
+Swasthika
 [email] · [phone]
 ```
 
