@@ -57,10 +57,24 @@ def root():
 
 @app.put("/facts/{agent_id:path}")
 def put_facts(agent_id: str, body: dict[str, Any]):
-    if "id" not in body or "signature" not in body:
+    # We accept both the legacy detached-signature shape (top-level `id` +
+    # `signature`) AND the W3C VC envelope (`credentialSubject.id` + `proof`).
+    # The host is a dumb store — the client is the verifier.
+    is_legacy = "id" in body and "signature" in body
+    is_vc = (
+        isinstance(body.get("credentialSubject"), dict)
+        and "id" in body["credentialSubject"]
+        and isinstance(body.get("proof"), dict)
+        and "proofValue" in body["proof"]
+    )
+    if not (is_legacy or is_vc):
         raise HTTPException(
             status_code=400,
-            detail="AgentFacts must include 'id' and 'signature' fields",
+            detail=(
+                "AgentFacts must be either (a) a W3C VC with credentialSubject.id "
+                "and proof.proofValue, or (b) a legacy detached-signature object "
+                "with top-level id and signature."
+            ),
         )
     _path_for(agent_id).write_text(json.dumps(body, indent=2))
     return {"stored": agent_id}

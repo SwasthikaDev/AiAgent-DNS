@@ -1,11 +1,12 @@
 # One-command demo stack: `docker compose up --build`
 #
 # Brings up:
-#   - index            :8000   NANDA lean index (signs AgentAddr records)
-#   - facts-primary    :8001   Agent-owned facts hosting (PrimaryFactsURL)
-#   - facts-private    :8002   Third-party facts hosting (PrivateFactsURL)
-#   - agent-echo       :8010   Sample agent
-#   - agent-translate  :8011   Sample agent
+#   - index             :8000   NANDA lean index (signs AgentAddr records)
+#   - facts-primary     :8001   Agent-owned facts hosting (PrimaryFactsURL)
+#   - facts-private     :8002   Third-party facts hosting (PrivateFactsURL)
+#   - agent-echo        :8010   Sample agent
+#   - agent-translate   :8011   Sample agent
+#   - adaptive-resolver :8020   Adaptive Resolver (§VI) — signed routing tokens
 #
 # After it's running, in another shell:
 #   pip install -r requirements.txt
@@ -65,3 +66,22 @@ services:
     environment:
       AGENT_KIND: translate
       AGENT_LABEL: "Mock Translator"
+
+  adaptive-resolver:
+    build: .
+    command: uvicorn services.adaptive_resolver.main:app --host 0.0.0.0 --port 8020
+    ports:
+      - "8020:8020"
+    environment:
+      NANDA_DATA_DIR: /data
+      ADAPTIVE_TOKEN_TTL: "60"
+      # Two endpoints in the pool — geo + capability-aware routing demo.
+      ADAPTIVE_POOLS: |
+        {
+          "urn:agent:demo:multiregion": [
+            {"url": "http://agent-echo:8010/echo",       "region": "us-east", "capabilities": ["echo"]},
+            {"url": "http://agent-translate:8011/translate","region": "eu-west", "capabilities": ["translate"]}
+          ]
+        }
+    volumes:
+      - ./data:/data
