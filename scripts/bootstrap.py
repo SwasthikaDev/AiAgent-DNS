@@ -21,7 +21,7 @@ import httpx
 # Allow running this script directly (python scripts/bootstrap.py)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from nanda.crypto import load_or_create_keypair, sign_payload  # noqa: E402
+from nanda.crypto import load_or_create_keypair, sign_vc_payload  # noqa: E402
 
 
 INDEX_URL = os.environ.get("INDEX_URL", "http://localhost:8000")
@@ -29,6 +29,7 @@ PRIMARY_FACTS_URL = os.environ.get("PRIMARY_FACTS_URL", "http://localhost:8001")
 PRIVATE_FACTS_URL = os.environ.get("PRIVATE_FACTS_URL", "http://localhost:8002")
 ECHO_AGENT_URL = os.environ.get("ECHO_AGENT_URL", "http://localhost:8010")
 TRANSLATE_AGENT_URL = os.environ.get("TRANSLATE_AGENT_URL", "http://localhost:8011")
+ADAPTIVE_RESOLVER_URL = os.environ.get("ADAPTIVE_RESOLVER_URL", "http://localhost:8020")
 
 KEYS_DIR = Path(os.environ.get("KEYS_DIR", "data/agent_keys"))
 
@@ -52,6 +53,7 @@ def register_agent(
     use_private: bool,
     skills: list[dict],
     capabilities: dict,
+    adaptive_resolver_url: str | None = None,
 ) -> None:
     print(f"\n=== Registering {agent_name} ===")
 
@@ -68,6 +70,8 @@ def register_agent(
     }
     if use_private:
         register_body["private_facts_url"] = f"{facts_host_url}/facts/PLACEHOLDER"
+    if adaptive_resolver_url:
+        register_body["adaptive_resolver_url"] = adaptive_resolver_url
 
     # First call to get the assigned agent_id.
     r = httpx.put(f"{INDEX_URL}/register", json=register_body, timeout=10.0)
@@ -80,14 +84,16 @@ def register_agent(
     register_body["primary_facts_url"] = f"{facts_host_url}/facts/{agent_id}"
     if use_private:
         register_body["private_facts_url"] = f"{facts_host_url}/facts/{agent_id}"
+    if adaptive_resolver_url:
+        register_body["adaptive_resolver_url"] = adaptive_resolver_url
 
     r = httpx.put(f"{INDEX_URL}/register", json=register_body, timeout=10.0)
     r.raise_for_status()
     addr = r.json()
     print(f"  registered with facts at: {addr['primary_facts_url']}")
 
-    # 3) Build and sign the AgentFacts document.
-    facts_payload = {
+    # 3) Build the AgentFacts subject and sign it as a W3C VC v2.
+    subject = {
         "id": agent_id,
         "agent_name": agent_name,
         "label": label,
@@ -98,9 +104,12 @@ def register_agent(
         "capabilities": capabilities,
         "skills": skills,
         "ttl": 300,
-        "issued_at": _now(),
     }
-    signed_facts = sign_payload(facts_payload, priv)
+    signed_facts = sign_vc_payload(
+        credential_subject=subject,
+        issuer_public_key_b64=pub,
+        issuer_private_key_b64=priv,
+    )
 
     # 4) PUT the signed facts to the host.
     r = httpx.put(
@@ -155,10 +164,34 @@ def main():
         },
     )
 
+    # Agent C — adaptive routing (§VI of the paper). Resolves to a signed
+    # routing token issued by the AdaptiveResolver, not a static endpoint.
+    register_agent(
+        agent_name="urn:agent:demo:multiregion",
+        label="Multi-Region Agent",
+        description="Routed dynamically by the Adaptive Resolver across regions.",
+        endpoint=f"{ECHO_AGENT_URL}/echo",  # fallback static endpoint
+        facts_host_url=PRIMARY_FACTS_URL,
+        use_private=False,
+        skills=[
+            {
+                "id": "echo",
+                "description": "Echoes input — dispatched to a regional pool by the resolver.",
+            }
+        ],
+        capabilities={
+            "modalities": ["text"],
+            "streaming": False,
+            "authentication": {"methods": ["none"]},
+        },
+        adaptive_resolver_url=f"{ADAPTIVE_RESOLVER_URL}/dispatch",
+    )
+
     print("\nAll demo agents registered. Try:")
     print("  python -m nanda.cli list")
     print("  python -m nanda.cli resolve urn:agent:demo:echo")
     print('  python -m nanda.cli call urn:agent:demo:echo --message "hello"')
+    print("  python -m nanda.cli call urn:agent:demo:multiregion --adaptive")
     print("  python -m nanda.cli demo-tamper urn:agent:demo:echo")
 
 

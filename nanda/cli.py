@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
 
 import httpx
 import typer
@@ -23,7 +22,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from nanda.crypto import verify_payload
+from nanda.crypto import verify_payload, verify_vc
 
 
 INDEX_URL = os.environ.get("INDEX_URL", "http://localhost:8000")
@@ -80,15 +79,16 @@ def _resolve_chain(agent_name: str, use_private: bool = False) -> dict:
     r = httpx.get(facts_url, timeout=5.0)
     r.raise_for_status()
     facts = r.json()
-    _ok(f"got AgentFacts (label='{facts.get('label')}')")
+    subject = facts.get("credentialSubject", {})
+    _ok(f"got AgentFacts VC (label='{subject.get('label')}', cryptosuite={facts.get('proof', {}).get('cryptosuite')})")
 
-    _step(5, total, "Verifying AgentFacts signature against the agent's public key (from AgentAddr)")
-    if not verify_payload(facts, addr["public_key"]):
-        _fail("AgentFacts signature INVALID — refusing to use this endpoint")
+    _step(5, total, "Verifying AgentFacts VC against the agent's public key (from AgentAddr)")
+    if not verify_vc(facts, addr["public_key"]):
+        _fail("AgentFacts VC signature INVALID — refusing to use this endpoint")
         raise typer.Exit(code=2)
-    _ok("AgentFacts signature VALID")
+    _ok("AgentFacts VC signature VALID (DataIntegrityProof / eddsa-jcs-2022)")
 
-    return {"addr": addr, "facts": facts}
+    return {"addr": addr, "facts": facts, "subject": subject}
 
 
 @app.command(name="list")
@@ -120,27 +120,30 @@ def resolve(
     private: bool = typer.Option(False, "--private", help="Use the private (third-party) facts URL."),
     show_facts: bool = typer.Option(False, "--show-facts", help="Print the full AgentFacts JSON."),
 ):
-    """Resolve an agent: index → AgentAddr → AgentFacts, verifying every signature."""
+    """Resolve an agent: index → AgentAddr → AgentFacts VC, verifying every signature."""
     result = _resolve_chain(agent_name, use_private=private)
     facts = result["facts"]
+    subject = result["subject"]
     addr = result["addr"]
 
     summary = Table.grid(padding=(0, 2))
     summary.add_column(style="bold")
     summary.add_column()
-    summary.add_row("Label", facts["label"])
-    summary.add_row("Description", facts["description"])
-    summary.add_row("Version", facts["version"])
-    summary.add_row("Endpoint", facts["endpoints"]["static"][0])
-    summary.add_row("Skills", ", ".join(s["id"] for s in facts["skills"]))
-    summary.add_row("Modalities", ", ".join(facts["capabilities"]["modalities"]))
-    summary.add_row("Facts TTL", f"{facts['ttl']}s")
+    summary.add_row("Label", subject["label"])
+    summary.add_row("Description", subject["description"])
+    summary.add_row("Version", subject["version"])
+    summary.add_row("Endpoint", subject["endpoints"]["static"][0])
+    summary.add_row("Skills", ", ".join(s["id"] for s in subject["skills"]))
+    summary.add_row("Modalities", ", ".join(subject["capabilities"]["modalities"]))
+    summary.add_row("VC type", " / ".join(facts.get("type", [])))
+    summary.add_row("Cryptosuite", facts.get("proof", {}).get("cryptosuite", "?"))
+    summary.add_row("Facts TTL", f"{subject['ttl']}s")
     summary.add_row("Index TTL", f"{addr['ttl']}s")
     console.print()
     console.print(Panel(summary, title="Resolved agent", border_style="green"))
 
     if show_facts:
-        console.print(Panel(json.dumps(facts, indent=2), title="AgentFacts (raw, signed)", border_style="dim"))
+        console.print(Panel(json.dumps(facts, indent=2), title="AgentFacts VC (raw)", border_style="dim"))
 
 
 @app.command()
@@ -148,11 +151,45 @@ def call(
     agent_name: str,
     message: str = typer.Option("hello from the client", "--message", "-m"),
     private: bool = typer.Option(False, "--private"),
+    adaptive: bool = typer.Option(
+        False,
+        "--adaptive",
+        help="Route via the agent's AdaptiveResolver (§VI). Requires an adaptive_resolver_url in the AgentAddr.",
+    ),
+    region: str = typer.Option("us-east", "--region", help="Client region hint for adaptive routing."),
 ):
     """Resolve the agent and POST a message to its endpoint."""
     result = _resolve_chain(agent_name, use_private=private)
-    endpoint = result["facts"]["endpoints"]["static"][0]
-    console.print(f"\n[bold]Calling[/bold] {endpoint}")
+    addr = result["addr"]
+
+    if adaptive:
+        if not addr.get("adaptive_resolver_url"):
+            _fail(f"agent {agent_name} has no adaptive_resolver_url")
+            raise typer.Exit(code=2)
+        console.print(f"\n[bold]Asking AdaptiveResolver[/bold] {addr['adaptive_resolver_url']}")
+        r = httpx.post(
+            addr["adaptive_resolver_url"],
+            json={
+                "agent_name": agent_name,
+                "client_region": region,
+                "policy": "geo",
+            },
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        token = r.json()
+        # Verify the resolver's signature on the routing token.
+        resolver_pub = token.get("resolver_pubkey")
+        if not resolver_pub or not verify_payload(token, resolver_pub):
+            _fail("AdaptiveResolver token signature INVALID — refusing to route")
+            raise typer.Exit(code=2)
+        _ok(f"Routing token VALID, expires_at={token['expires_at']}, policy={token['policy_applied']}")
+        endpoint = token["endpoint"]
+        console.print(f"[bold]Resolver dispatched →[/bold] {endpoint}  ([dim]region={token['region']}[/dim])")
+    else:
+        endpoint = result["subject"]["endpoints"]["static"][0]
+        console.print(f"\n[bold]Calling[/bold] {endpoint}")
+
     r = httpx.post(endpoint, json={"message": message}, timeout=10.0)
     r.raise_for_status()
     console.print(Panel(json.dumps(r.json(), indent=2), title="Agent response", border_style="cyan"))
@@ -178,26 +215,26 @@ def demo_tamper(agent_name: str):
         raise typer.Exit(code=2)
     _ok("AgentAddr signature VALID")
 
-    _step(3, 4, "Fetching AgentFacts and tampering with the endpoint")
+    _step(3, 4, "Fetching AgentFacts VC and tampering with the endpoint inside credentialSubject")
     facts = httpx.get(addr["primary_facts_url"], timeout=5.0).json()
-    original_endpoint = facts["endpoints"]["static"][0]
-    facts["endpoints"]["static"][0] = "http://evil.example.com/steal"
+    original_endpoint = facts["credentialSubject"]["endpoints"]["static"][0]
+    facts["credentialSubject"]["endpoints"]["static"][0] = "http://evil.example.com/steal"
     console.print(f"        original endpoint: [dim]{original_endpoint}[/dim]")
-    console.print(f"        tampered endpoint: [red]http://evil.example.com/steal[/red]")
+    console.print("        tampered endpoint: [red]http://evil.example.com/steal[/red]")
 
-    _step(4, 4, "Re-verifying tampered AgentFacts")
-    ok = verify_payload(facts, addr["public_key"])
+    _step(4, 4, "Re-verifying tampered AgentFacts VC")
+    ok = verify_vc(facts, addr["public_key"])
     if ok:
         _fail("BUG: verifier accepted a tampered document — this should never happen")
         raise typer.Exit(code=1)
-    _ok("AgentFacts signature INVALID — client refuses to call the evil endpoint")
+    _ok("AgentFacts VC INVALID — client refuses to call the evil endpoint")
     console.print()
     console.print(Panel(
         "[bold green]Tamper detection works.[/bold green]\n\n"
-        "A man-in-the-middle who swaps the endpoint URL inside a signed\n"
-        "AgentFacts cannot forge a new signature without the agent's private\n"
-        "key. The client compares the document against the public key it got\n"
-        "from the (independently-signed) AgentAddr and rejects the mutation.",
+        "A man-in-the-middle who swaps the endpoint URL inside the W3C VC's\n"
+        "credentialSubject cannot forge a new DataIntegrityProof without the\n"
+        "agent's private key. The client re-canonicalises the document\n"
+        "(JCS, RFC 8785), runs Ed25519 verify, and rejects the mutation.",
         border_style="green",
     ))
 
