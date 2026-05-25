@@ -1,0 +1,44 @@
+# Fly.io config for the NANDA Index service.
+#
+# Deploys the index + web UI to a free-tier shared-CPU VM so reviewers can
+# click a URL instead of cloning the repo. The facts hosts, agents, and
+# adaptive resolver still run locally via docker-compose — splitting all
+# 6 services into separate Fly apps is in ROADMAP.md but not in scope here.
+#
+# Quickstart:
+#   fly auth signup    # if you don't have an account
+#   fly launch --no-deploy --copy-config --name nanda-index-demo
+#   fly deploy
+#
+# After deploy, the index API is at https://<app>.fly.dev/
+# and the UI is at https://<app>.fly.dev/ui/
+
+app = "nanda-index-demo"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NANDA_DATA_DIR = "/data"
+
+[processes]
+  app = "uvicorn services.index_service.main:app --host 0.0.0.0 --port 8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[mounts]]
+  source = "nanda_data"
+  destination = "/data"

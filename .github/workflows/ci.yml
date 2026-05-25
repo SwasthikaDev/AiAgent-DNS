@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: pytest + integration smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run crypto + VC unit tests
+        env:
+          PYTHONPATH: .
+        run: pytest tests/ -v
+
+      - name: Integration smoke — sign, publish, resolve, verify
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from nanda.crypto import (
+              generate_keypair, sign_payload, verify_payload,
+              sign_vc_payload, verify_vc,
+          )
+
+          # AgentAddr-style detached signature roundtrip
+          priv, pub = generate_keypair()
+          addr = sign_payload({"agent_id": "nanda:test", "ttl": 60}, priv)
+          assert verify_payload(addr, pub), "AgentAddr verify failed"
+
+          # AgentFacts VC roundtrip (W3C DataIntegrityProof / eddsa-jcs-2022)
+          vc = sign_vc_payload(
+              credential_subject={"id": "nanda:test", "label": "Test"},
+              issuer_public_key_b64=pub,
+              issuer_private_key_b64=priv,
+          )
+          assert vc["proof"]["cryptosuite"] == "eddsa-jcs-2022"
+          assert verify_vc(vc, pub), "VC verify failed"
+
+          # Tamper detection
+          vc["credentialSubject"]["label"] = "evil"
+          assert not verify_vc(vc, pub), "tamper not detected"
+
+          print("integration smoke OK")
+          PY
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Lint
+        run: ruff check nanda services scripts tests --select E,F,W --ignore E501
