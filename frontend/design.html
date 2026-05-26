@@ -64,18 +64,106 @@
         How agents are discovered, verified, and called.
       </h2>
       <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
-        Five diagrams. Each one corresponds to a real flow you can trigger from the
-        <a href="index.html" class="text-blue-700 hover:underline font-medium">live demo</a>:
-        the system architecture, the standard resolution chain, the adaptive routing path,
+        Six diagrams. The first one traces a real user request — <em>"book me a flight"</em> —
+        from the moment it's spoken to the moment a confirmation comes back, with every signature
+        and every W3C operation labelled. The other five are technical drill-downs you can refer
+        back to: the system architecture, the standard resolution chain, the adaptive routing path,
         the tamper-detection failure mode, and the cryptographic trust hierarchy.
         All rendered client-side as SVG via Mermaid.
       </p>
     </section>
 
-    <!-- ============== 1. SYSTEM ARCHITECTURE ============== -->
+    <!-- ============== 1. END-TO-END USER REQUEST ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">Diagram 1</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">Diagram 1 · the headline</p>
+        <h3 class="diagram-title">End-to-end · "Book me a flight from Mumbai to Singapore on June 10"</h3>
+        <p class="diagram-desc">
+          A real, concrete user request traced through every layer of the system. The
+          <span class="text-blue-700 font-semibold">blue band</span> is <strong>discovery</strong> — finding which
+          agent to talk to. The <span class="text-emerald-700 font-semibold">green band</span> is
+          <strong>verification</strong> — two independent Ed25519 signature checks that establish the
+          chain of trust before anyone is called. The <span class="text-amber-700 font-semibold">amber band</span> is
+          the <strong>actual call</strong> — only reached after verification passes. If any link in the
+          chain breaks, the flight booking never happens.
+        </p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor U as 👤 User
+    participant C as Client App
+    participant I as Lean Index
+    participant F as Facts Host
+    participant A as Flight Agent
+
+    U->>C: "Book flight Mumbai → Singapore<br/>on June 10, 2026"
+
+    rect rgb(219, 234, 254)
+      Note over C,I: Phase 1 · DISCOVER — find the agent
+      C->>I: GET / (fetch index pubkey)
+      I-->>C: index_pubkey (32 B Ed25519)
+      C->>I: GET /resolve/urn:agent:flights:demo
+      Note right of I: index builds fresh AgentAddr<br/>signs with K_index (Ed25519)<br/>over JCS-canonical bytes
+      I-->>C: signed AgentAddr<br/>{ pubkey, facts_url, ttl, sig }
+    end
+
+    rect rgb(220, 252, 231)
+      Note over C: Phase 2 · VERIFY — cryptographic trust chain
+      Note right of C: 🔐 VERIFY #1 (AgentAddr)<br/>nacl.sign.detached.verify(<br/>  JCS-canonical(addr − sig),<br/>  sig,<br/>  index_pubkey)<br/>→ trust the agent's pubkey
+
+      C->>F: GET facts_url
+      F-->>C: W3C VerifiableCredential v2<br/>DataIntegrityProof<br/>cryptosuite: eddsa-jcs-2022<br/>contains: endpoints, skills, capabilities
+
+      Note right of C: 🔐 VERIFY #2 (AgentFacts VC)<br/>strip proof block<br/>JCS-canonicalize (RFC 8785)<br/>nacl.sign.detached.verify(<br/>  canonical(VC − proof),<br/>  proof.proofValue,<br/>  agent_pubkey)<br/>→ trust the endpoint URL
+    end
+
+    rect rgb(254, 243, 199)
+      Note over C,A: Phase 3 · CALL — now safe to invoke
+      C->>A: POST /book<br/>{ from: "Mumbai", to: "Singapore",<br/>  date: "2026-06-10" }
+      Note right of A: agent processes the booking
+      A-->>C: { confirmation: "ABC123",<br/>  price: "$420", seat: "14A" }
+    end
+
+    C-->>U: "✅ Booked. Confirmation ABC123, $420, seat 14A"
+</pre>
+        </div>
+
+        <!-- "What's actually signed" callout -->
+        <div class="mt-6 border-t border-slate-200 pt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
+            <p class="text-xs uppercase tracking-widest font-semibold text-slate-600 mb-2">🔐 Signature 1 — AgentAddr</p>
+            <ul class="text-sm text-slate-700 space-y-1.5 leading-relaxed">
+              <li><strong>Signed by:</strong> the lean index (<code>K_index</code>, Ed25519)</li>
+              <li><strong>Signed over:</strong> JCS-canonical bytes of the AgentAddr <em>minus</em> the signature field</li>
+              <li><strong>Why it matters:</strong> proves the lookup result wasn't substituted en route — the index really did say "here's where to find this agent"</li>
+              <li><strong>Verified by:</strong> the client, using the index pubkey fetched at session start</li>
+            </ul>
+          </div>
+          <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
+            <p class="text-xs uppercase tracking-widest font-semibold text-slate-600 mb-2">🔐 Signature 2 — AgentFacts VC</p>
+            <ul class="text-sm text-slate-700 space-y-1.5 leading-relaxed">
+              <li><strong>Signed by:</strong> the agent itself (<code>K_agent</code>, Ed25519)</li>
+              <li><strong>Format:</strong> <strong>W3C Verifiable Credential v2</strong> with <code>DataIntegrityProof</code>, cryptosuite <code>eddsa-jcs-2022</code></li>
+              <li><strong>Why it matters:</strong> proves the agent's capabilities and endpoint URL weren't mutated — even if the facts host or the network is compromised</li>
+              <li><strong>Verified by:</strong> the client, using the agent's pubkey carried inside the AgentAddr from Signature 1</li>
+            </ul>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-500 mt-4 leading-relaxed">
+          Neither the index nor the facts host is asked to vouch for itself. Both verifications happen
+          in the client (browser uses TweetNaCl, CLI uses PyNaCl) — same Ed25519 primitive over the same
+          RFC 8785 canonical JSON. If anyone tampers with the endpoint URL, the chain breaks and the
+          flight booking call is refused before it leaves the client.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 2. SYSTEM ARCHITECTURE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">Diagram 2</p>
         <h3 class="diagram-title">System architecture · six services, one lookup</h3>
         <p class="diagram-desc">
           The lean index is the only point of first contact. From there, the client follows pointers
@@ -127,7 +215,7 @@ flowchart LR
     <!-- ============== 2. RESOLUTION FLOW ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">Diagram 2</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">Diagram 3</p>
         <h3 class="diagram-title">Resolution flow · the standard 5-step chain</h3>
         <p class="diagram-desc">
           This is exactly what runs when you click <em>Resolve</em> on any agent in the live demo.
@@ -166,7 +254,7 @@ sequenceDiagram
     <!-- ============== 3. ADAPTIVE ROUTING ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1">Diagram 3</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1">Diagram 4</p>
         <h3 class="diagram-title">Adaptive routing · when endpoints move fast</h3>
         <p class="diagram-desc">
           If the agent's <code>AgentAddr</code> includes an <code>adaptive_resolver_url</code> (the
@@ -207,7 +295,7 @@ sequenceDiagram
     <!-- ============== 4. TAMPER DETECTION ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-red-700 mb-1">Diagram 4</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-red-700 mb-1">Diagram 5</p>
         <h3 class="diagram-title">Tamper detection · why mutation fails</h3>
         <p class="diagram-desc">
           A man-in-the-middle can intercept and modify the signed VC, but cannot forge a new
@@ -242,7 +330,7 @@ sequenceDiagram
     <!-- ============== 5. TRUST CHAIN ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">Diagram 5</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">Diagram 6</p>
         <h3 class="diagram-title">Trust chain · who signs what, who verifies what</h3>
         <p class="diagram-desc">
           Three independent Ed25519 keypairs guard the system. Compromising any one of them
