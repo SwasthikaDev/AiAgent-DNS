@@ -240,6 +240,26 @@ function appendStep(host, { num, total, title, detail, status }) {
   return node;
 }
 
+// Append a tech-detail block under the most recent step. Each line in `lines`
+// is rendered as a small mono row; use the helper HTML in lines[] for HTTP
+// method badges, ok/fail color, etc.
+function addStepTech(host, lines) {
+  const target = host.lastChild?.querySelector(".min-w-0");
+  if (!target) return;
+  const wrap = document.createElement("div");
+  wrap.className = "step-tech";
+  wrap.innerHTML = lines.map(l => `<div class="step-tech-line">${l}</div>`).join("");
+  target.appendChild(wrap);
+}
+
+// Tiny formatter helpers used by the cascade narrator.
+const fmtBytes = (n) => `${n.toLocaleString()} bytes`;
+const fmtSig = (s) => s ? `${s.slice(0, 16)}…${s.slice(-8)}` : "?";
+const fmtMethod = (m) => `<span class="http-method-${m}">${m}</span>`;
+const fmtStatus = (s) => (s >= 200 && s < 300) ? `<span class="tech-ok">${s} OK</span>` : `<span class="tech-fail">${s}</span>`;
+// Canonicalised payload byte count for a given JS object (matches what nacl verifies).
+const canonBytes = (obj) => new TextEncoder().encode(canonicalize(obj)).length;
+
 function appendJsonCard(host, title, json, opts = {}) {
   const wrap = document.createElement("div");
   wrap.className = "mt-4";
@@ -252,21 +272,36 @@ function appendJsonCard(host, title, json, opts = {}) {
 }
 
 // ----------- The resolution chain ------------------------------------
-async function fetchIndexPubkey() {
+// Wrappers that also capture the raw response so the cascade can annotate it
+// with HTTP status + payload size. We need the body length for narration —
+// the regular .json() call discards it.
+async function fetchIndexPubkeyRich() {
   const r = await fetch(`${CFG.INDEX_URL}/`);
-  return (await r.json()).public_key;
+  const txt = await r.text();
+  return { status: r.status, bytes: txt.length, body: JSON.parse(txt) };
 }
-
-async function fetchAddr(name) {
+async function fetchAddrRich(name) {
   const r = await fetch(`${CFG.INDEX_URL}/resolve/${encodeURIComponent(name)}`);
-  if (!r.ok) throw new Error(`index returned ${r.status}`);
-  return r.json();
+  const txt = await r.text();
+  return { status: r.status, bytes: txt.length, body: r.ok ? JSON.parse(txt) : null };
+}
+async function fetchFactsRich(url) {
+  const r = await fetch(url);
+  const txt = await r.text();
+  return { status: r.status, bytes: txt.length, body: r.ok ? JSON.parse(txt) : null };
 }
 
+// Backwards-compat thin wrappers (kept for the tamper button which uses them).
+async function fetchIndexPubkey() { return (await fetchIndexPubkeyRich()).body.public_key; }
+async function fetchAddr(name) {
+  const r = await fetchAddrRich(name);
+  if (!r.body) throw new Error(`index returned ${r.status}`);
+  return r.body;
+}
 async function fetchFacts(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`facts host returned ${r.status}`);
-  return r.json();
+  const r = await fetchFactsRich(url);
+  if (!r.body) throw new Error(`facts host returned ${r.status}`);
+  return r.body;
 }
 
 async function runResolutionCascade(agentName, options = {}) {
@@ -274,63 +309,85 @@ async function runResolutionCascade(agentName, options = {}) {
   const total = 5;
   await sleep(50);
 
-  // 1) index pubkey
+  // ─── 1) index pubkey ─────────────────────────────────────────────────
   appendStep(host, {
     num: 1, total,
     title: `Fetch index public key`,
     detail: `GET ${CFG.INDEX_URL}/`,
     status: "pending",
   });
-  let indexPub;
+  let pubFetch;
   try {
-    indexPub = await fetchIndexPubkey();
+    pubFetch = await fetchIndexPubkeyRich();
   } catch (e) {
     host.lastChild.className = "cascade-step error shown";
     host.lastChild.querySelector(".step-num").className = "step-num error";
     return null;
   }
+  const indexPub = pubFetch.body.public_key;
   host.lastChild.className = "cascade-step success shown";
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
     `pubkey&nbsp;<span class="text-blue-700 font-semibold">${indexPub.slice(0, 28)}…</span>`;
+  addStepTech(host, [
+    `${fmtMethod("GET")} <span class="tech-value">${CFG.INDEX_URL}/</span> → ${fmtStatus(pubFetch.status)} <span class="tech-label">·</span> ${fmtBytes(pubFetch.bytes)}`,
+    `<span class="tech-label">↳ cached:</span> 32-byte Ed25519 public key <span class="tech-label">(base64)</span>`,
+    `<span class="tech-label">↳ trust anchor for steps 2–3</span>`,
+  ]);
   await sleep(350);
 
-  // 2) resolve to AgentAddr
+  // ─── 2) resolve to AgentAddr ─────────────────────────────────────────
   appendStep(host, {
     num: 2, total,
     title: `Resolve <span class="text-blue-700 font-mono">${agentName}</span>`,
     detail: `GET ${CFG.INDEX_URL}/resolve/${agentName}`,
     status: "pending",
   });
-  let addr;
-  try {
-    addr = await fetchAddr(agentName);
-  } catch (e) {
+  const addrFetch = await fetchAddrRich(agentName);
+  if (!addrFetch.body) {
     host.lastChild.className = "cascade-step error shown";
     host.lastChild.querySelector(".step-num").className = "step-num error";
     host.lastChild.querySelector(".step-num").textContent = "✗";
     host.lastChild.querySelector(".step-detail").innerHTML = `Not found.`;
+    addStepTech(host, [
+      `${fmtMethod("GET")} <span class="tech-value">${CFG.INDEX_URL}/resolve/${agentName}</span> → ${fmtStatus(addrFetch.status)}`,
+    ]);
     return null;
   }
+  const addr = addrFetch.body;
   host.lastChild.className = "cascade-step success shown";
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
     `agent_id&nbsp;<span class="text-violet-700 font-semibold">${addr.agent_id}</span>`;
+  addStepTech(host, [
+    `${fmtMethod("GET")} <span class="tech-value">${CFG.INDEX_URL}/resolve/${agentName}</span> → ${fmtStatus(addrFetch.status)} <span class="tech-label">·</span> ${fmtBytes(addrFetch.bytes)}`,
+    `<span class="tech-label">↳ received:</span> signed AgentAddr <span class="tech-label">(${Object.keys(addr).length} fields, TTL ${addr.ttl}s)</span>`,
+    `<span class="tech-label">↳ agent pubkey:</span> <span class="tech-value">${addr.public_key.slice(0,28)}…</span>`,
+    `<span class="tech-label">↳ index signature:</span> <span class="tech-value">${fmtSig(addr.signature)}</span>`,
+  ]);
   await sleep(350);
 
-  // 3) verify AgentAddr
+  // ─── 3) verify AgentAddr ─────────────────────────────────────────────
   appendStep(host, {
     num: 3, total,
     title: `Verify AgentAddr signature against the index's public key`,
     detail: `Ed25519 verify (in browser, via TweetNaCl)`,
     status: "pending",
   });
+  const addrCanonBytes = canonBytes(Object.fromEntries(Object.entries(addr).filter(([k]) => k !== "signature")));
   const addrOK = verifyEd25519(addr, indexPub);
   host.lastChild.className = `cascade-step ${addrOK ? "success" : "error"} shown`;
   host.lastChild.querySelector(".step-num").className = `step-num ${addrOK ? "success" : "error"}`;
   host.lastChild.querySelector(".step-num").textContent = addrOK ? "✓" : "✗";
+  addStepTech(host, [
+    `<span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical, sig, indexPubkey)</span>`,
+    `<span class="tech-label">payload:</span> ${fmtBytes(addrCanonBytes)} JCS-canonical JSON <span class="tech-label">(RFC 8785, signature field stripped)</span>`,
+    `<span class="tech-label">signature:</span> 64 bytes Ed25519 <span class="tech-label">(base64-decoded from addr.signature)</span>`,
+    `<span class="tech-label">key:</span> 32 bytes Ed25519 <span class="tech-label">(from step 1)</span>`,
+    `<span class="tech-label">result:</span> ${addrOK ? '<span class="tech-ok">VALID ✓</span>' : '<span class="tech-fail">INVALID ✗</span>'}`,
+  ]);
   if (!addrOK) {
     host.lastChild.querySelector(".step-detail").innerHTML =
       `<span class="text-red-700 font-semibold">signature INVALID — index would be impersonated</span>`;
@@ -338,7 +395,7 @@ async function runResolutionCascade(agentName, options = {}) {
   }
   await sleep(350);
 
-  // 4) fetch facts (decide which URL based on options.private)
+  // ─── 4) fetch AgentFacts ─────────────────────────────────────────────
   const factsUrl =
     options.private && addr.private_facts_url
       ? addr.private_facts_url
@@ -350,34 +407,48 @@ async function runResolutionCascade(agentName, options = {}) {
     detail: `GET ${factsUrl}`,
     status: "pending",
   });
-  let facts;
-  try {
-    facts = await fetchFacts(factsUrl);
-  } catch (e) {
+  const factsFetch = await fetchFactsRich(factsUrl);
+  if (!factsFetch.body) {
     host.lastChild.className = "cascade-step error shown";
     host.lastChild.querySelector(".step-num").className = "step-num error";
     host.lastChild.querySelector(".step-num").textContent = "✗";
+    addStepTech(host, [`${fmtMethod("GET")} ${factsUrl} → ${fmtStatus(factsFetch.status)}`]);
     return null;
   }
+  const facts = factsFetch.body;
   host.lastChild.className = "cascade-step success shown";
   host.lastChild.querySelector(".step-num").className = "step-num success";
   host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
-    `label&nbsp;<span class="text-amber-700 font-semibold">"${facts.credentialSubject?.label ?? facts.label ?? "(unknown)"}"</span>`;
+    `label&nbsp;<span class="text-amber-700 font-semibold">"${facts.credentialSubject?.label ?? "(unknown)"}"</span>`;
+  addStepTech(host, [
+    `${fmtMethod("GET")} <span class="tech-value">${factsUrl}</span> → ${fmtStatus(factsFetch.status)} <span class="tech-label">·</span> ${fmtBytes(factsFetch.bytes)}`,
+    `<span class="tech-label">↳ type:</span> W3C ${(facts.type || []).join(" / ")}`,
+    `<span class="tech-label">↳ issuer:</span> <span class="tech-value">${(facts.issuer || "").slice(0,32)}…</span>`,
+    `<span class="tech-label">↳ cryptosuite:</span> <span class="tech-value">${facts.proof?.cryptosuite || "?"}</span>`,
+    `<span class="tech-label">↳ proofValue:</span> <span class="tech-value">${fmtSig(facts.proof?.proofValue)}</span>`,
+  ]);
   await sleep(350);
 
-  // 5) verify AgentFacts VC with the agent's public key (from AgentAddr).
-  // Uses W3C DataIntegrityProof / eddsa-jcs-2022.
+  // ─── 5) verify the VC ────────────────────────────────────────────────
   appendStep(host, {
     num: 5, total,
     title: `Verify AgentFacts VC against the agent's own public key`,
     detail: `DataIntegrityProof · eddsa-jcs-2022 · pubkey from step 3`,
     status: "pending",
   });
+  const vcCanonBytes = canonBytes(Object.fromEntries(Object.entries(facts).filter(([k]) => k !== "proof")));
   const factsOK = verifyVC(facts, addr.public_key);
   host.lastChild.className = `cascade-step ${factsOK ? "success" : "error"} shown`;
   host.lastChild.querySelector(".step-num").className = `step-num ${factsOK ? "success" : "error"}`;
   host.lastChild.querySelector(".step-num").textContent = factsOK ? "✓" : "✗";
+  addStepTech(host, [
+    `<span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical, proofValue, agentPubkey)</span>`,
+    `<span class="tech-label">payload:</span> ${fmtBytes(vcCanonBytes)} JCS-canonical JSON <span class="tech-label">(proof block stripped)</span>`,
+    `<span class="tech-label">signature:</span> 64 bytes Ed25519 <span class="tech-label">(base64-decoded from proof.proofValue)</span>`,
+    `<span class="tech-label">key:</span> agent pubkey from AgentAddr (step 2) <span class="tech-label">— chain of custody complete</span>`,
+    `<span class="tech-label">result:</span> ${factsOK ? '<span class="tech-ok">VALID ✓</span>' : '<span class="tech-fail">INVALID ✗</span>'}`,
+  ]);
   if (!factsOK) {
     host.lastChild.querySelector(".step-detail").innerHTML =
       `<span class="text-red-700 font-semibold">VC signature INVALID — refusing to trust endpoint</span>`;
@@ -399,17 +470,35 @@ async function runResolutionCascade(agentName, options = {}) {
   banner.className = "alert alert-success mt-5";
   banner.innerHTML = `
     <span class="badge-result ok">verified</span>
-    <div>
+    <div class="min-w-0 flex-1">
       <div class="font-semibold">Trust chain complete</div>
       <div class="text-sm mt-0.5">
         Safe to call endpoint
         <span class="font-mono text-emerald-900 font-semibold">${endpoint}</span>
+      </div>
+      <div class="text-[11px] text-emerald-800/80 mt-2 font-mono leading-relaxed">
+        <span class="tech-label">chain:</span>
+        index pubkey <span class="tech-label">→</span>
+        AgentAddr <span class="tech-label">(signed by index, ${addr.ttl}s TTL)</span> <span class="tech-label">→</span>
+        agent pubkey <span class="tech-label">→</span>
+        AgentFacts VC <span class="tech-label">(signed by agent, ${facts.credentialSubject.ttl}s TTL)</span> <span class="tech-label">→</span>
+        endpoint
       </div>
     </div>
   `;
   cascadeEl().appendChild(banner);
 
   return { addr, facts };
+}
+
+// Append an extra step to the cascade panel after the main 5 are done — used
+// by the adaptive flow + the final POST to the agent endpoint so they share
+// the same step-by-step narration as the resolution chain.
+function appendExtraStep({ num, title, detail, status, tech }) {
+  const host = $("#cascadeSteps");
+  if (!host) return;
+  appendStep(host, { num, total: num, title, detail, status });
+  if (tech) addStepTech(host, tech);
 }
 
 // ----------- Call ----------------------------------------------------
@@ -420,7 +509,7 @@ $("#callBtn").addEventListener("click", async () => {
   const region = $("#regionSelect").value;
   const resultBox = $("#callResult");
   resultBox.classList.remove("hidden");
-  resultBox.innerHTML = `<div class="text-sm text-slate-500">Resolving agent…</div>`;
+  resultBox.innerHTML = `<div class="text-sm text-slate-500">Resolving agent (full chain below)…</div>`;
 
   const resolved = await runResolutionCascade(name);
   if (!resolved) {
@@ -429,8 +518,8 @@ $("#callBtn").addEventListener("click", async () => {
   }
 
   let endpoint;
-  let extraDetail = "";
 
+  // ─── Optional adaptive dispatch (extends the cascade panel) ─────────
   if (useAdaptive) {
     const resolverUrl = resolved.addr.adaptive_resolver_url;
     if (!resolverUrl) {
@@ -439,54 +528,111 @@ $("#callBtn").addEventListener("click", async () => {
       </div>`;
       return;
     }
+    const dispatchBody = { agent_name: name, client_region: region, policy: "geo" };
+
+    // Step 6: dispatch to resolver
+    appendExtraStep({
+      num: 6,
+      title: `Dispatch via Adaptive Resolver (§VI)`,
+      detail: `POST ${resolverUrl}`,
+      status: "pending",
+    });
+    let token, dispatchStatus, dispatchBytes;
     try {
       const r = await fetch(resolverUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agent_name: name,
-          client_region: region,
-          policy: "geo",
-        }),
+        body: JSON.stringify(dispatchBody),
       });
-      const token = await r.json();
-      const resolverPub = token.resolver_pubkey;
-      if (!resolverPub || !verifyEd25519(token, resolverPub)) {
-        resultBox.innerHTML = `<div class="alert alert-danger text-sm">
-          Adaptive routing token failed signature verification. Refusing to call.
-        </div>`;
-        return;
-      }
-      endpoint = token.endpoint;
-      extraDetail = `
-        <div class="alert alert-info mt-3 text-sm">
-          <span class="badge-result ok">resolver</span>
-          <div>
-            <strong>Adaptive routing token verified.</strong>
-            Policy <code>${token.policy_applied}</code>, region
-            <code>${token.region}</code>, expires_at <code>${token.expires_at}</code>.
-          </div>
-        </div>
-      `;
+      const txt = await r.text();
+      dispatchStatus = r.status;
+      dispatchBytes = txt.length;
+      token = JSON.parse(txt);
     } catch (e) {
-      resultBox.innerHTML = `<div class="alert alert-danger text-sm">Adaptive resolver call failed: ${e.message}</div>`;
+      const host = $("#cascadeSteps");
+      host.lastChild.className = "cascade-step error shown";
+      host.lastChild.querySelector(".step-num").className = "step-num error";
+      host.lastChild.querySelector(".step-num").textContent = "✗";
+      addStepTech(host, [`error: ${e.message}`]);
       return;
     }
+    {
+      const host = $("#cascadeSteps");
+      host.lastChild.className = "cascade-step success shown";
+      host.lastChild.querySelector(".step-num").className = "step-num success";
+      host.lastChild.querySelector(".step-num").textContent = "✓";
+      host.lastChild.querySelector(".step-detail").innerHTML =
+        `region&nbsp;<span class="text-amber-700 font-semibold">${token.region}</span> · policy&nbsp;<span class="text-amber-700 font-semibold">${token.policy_applied}</span>`;
+      addStepTech(host, [
+        `${fmtMethod("POST")} <span class="tech-value">${resolverUrl}</span> → ${fmtStatus(dispatchStatus)} <span class="tech-label">·</span> ${fmtBytes(dispatchBytes)}`,
+        `<span class="tech-label">request body:</span> <span class="tech-value">{"agent_name":"${name}","client_region":"${region}","policy":"geo"}</span>`,
+        `<span class="tech-label">↳ chosen endpoint:</span> <span class="tech-value">${token.endpoint}</span>`,
+        `<span class="tech-label">↳ TTL window:</span> issued_at=${token.issued_at}, expires_at=${token.expires_at} <span class="tech-label">(${token.expires_at - token.issued_at}s)</span>`,
+        `<span class="tech-label">↳ resolver pubkey:</span> <span class="tech-value">${token.resolver_pubkey.slice(0,28)}…</span>`,
+      ]);
+    }
+    await sleep(300);
+
+    // Step 7: verify resolver token
+    appendExtraStep({
+      num: 7,
+      title: `Verify routing token signature against the resolver's public key`,
+      detail: `Ed25519 verify (in browser, via TweetNaCl)`,
+      status: "pending",
+    });
+    const tokenCanonBytes = canonBytes(Object.fromEntries(Object.entries(token).filter(([k]) => k !== "signature")));
+    const tokenOK = verifyEd25519(token, token.resolver_pubkey);
+    {
+      const host = $("#cascadeSteps");
+      host.lastChild.className = `cascade-step ${tokenOK ? "success" : "error"} shown`;
+      host.lastChild.querySelector(".step-num").className = `step-num ${tokenOK ? "success" : "error"}`;
+      host.lastChild.querySelector(".step-num").textContent = tokenOK ? "✓" : "✗";
+      addStepTech(host, [
+        `<span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical, sig, resolverPubkey)</span>`,
+        `<span class="tech-label">payload:</span> ${fmtBytes(tokenCanonBytes)} JCS-canonical JSON`,
+        `<span class="tech-label">signature:</span> 64 bytes Ed25519 <span class="tech-label">(from token.signature)</span>`,
+        `<span class="tech-label">result:</span> ${tokenOK ? '<span class="tech-ok">VALID ✓</span>' : '<span class="tech-fail">INVALID ✗</span>'}`,
+      ]);
+    }
+    if (!tokenOK) {
+      resultBox.innerHTML = `<div class="alert alert-danger text-sm">Adaptive routing token failed signature verification. Refusing to call.</div>`;
+      return;
+    }
+    endpoint = token.endpoint;
+    await sleep(300);
   } else {
     endpoint = resolved.facts.credentialSubject.endpoints.static[0];
   }
 
-  resultBox.innerHTML = `<div class="text-sm text-slate-500">POST ${endpoint} …</div>`;
+  // ─── Final call to the endpoint (also lands in the cascade) ─────────
+  const finalStepNum = useAdaptive ? 8 : 6;
+  appendExtraStep({
+    num: finalStepNum,
+    title: `Call the verified endpoint`,
+    detail: `POST ${endpoint}`,
+    status: "pending",
+  });
   try {
     const r = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
     });
-    const body = await r.json();
+    const txt = await r.text();
+    const body = JSON.parse(txt);
+    const host = $("#cascadeSteps");
+    host.lastChild.className = "cascade-step success shown";
+    host.lastChild.querySelector(".step-num").className = "step-num success";
+    host.lastChild.querySelector(".step-num").textContent = "✓";
+    host.lastChild.querySelector(".step-detail").innerHTML =
+      `status&nbsp;<span class="text-emerald-700 font-semibold">${r.status}</span> · ${txt.length} bytes`;
+    addStepTech(host, [
+      `${fmtMethod("POST")} <span class="tech-value">${endpoint}</span> → ${fmtStatus(r.status)} <span class="tech-label">·</span> ${fmtBytes(txt.length)}`,
+      `<span class="tech-label">request body:</span> <span class="tech-value">${JSON.stringify({ message })}</span>`,
+    ]);
+
     resultBox.innerHTML = `
-      ${extraDetail}
-      <p class="text-xs uppercase tracking-widest text-slate-500 mb-1.5 mt-3 font-semibold">Response from <span class="font-mono text-slate-700">${endpoint}</span></p>
+      <p class="text-xs uppercase tracking-widest text-slate-500 mb-1.5 font-semibold">Response from <span class="font-mono text-slate-700">${endpoint}</span></p>
       <div class="json-block">${renderJson(body)}</div>
     `;
   } catch (e) {
@@ -518,6 +664,12 @@ $("#tamperBtn").addEventListener("click", async () => {
   tampered.credentialSubject.endpoints.static[0] = "http://evil.example.com/steal";
   const tamperedValid = verifyVC(tampered, addr.public_key);
 
+  // Capture the byte counts and signatures so we can show them to the user.
+  const stripProof = (vc) => Object.fromEntries(Object.entries(vc).filter(([k]) => k !== "proof"));
+  const origBytes = canonBytes(stripProof(facts));
+  const tampBytes = canonBytes(stripProof(tampered));
+  const sigShort = fmtSig(facts.proof.proofValue);
+
   out.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <section class="border border-slate-200 rounded-md p-4 bg-white">
@@ -526,6 +678,11 @@ $("#tamperBtn").addEventListener("click", async () => {
           <span class="badge-result ${originallyValid ? "ok" : "fail"}">${originallyValid ? "valid" : "failed"}</span>
         </div>
         <div class="diff-row before">"credentialSubject.endpoints.static[0]": "${originalEndpoint}"</div>
+        <div class="step-tech mt-3">
+          <div class="step-tech-line"><span class="tech-label">canonical payload:</span> ${fmtBytes(origBytes)}</div>
+          <div class="step-tech-line"><span class="tech-label">signature:</span> <span class="tech-value">${sigShort}</span></div>
+          <div class="step-tech-line"><span class="tech-label">verify:</span> <span class="tech-ok">PASS</span></div>
+        </div>
       </section>
 
       <section class="border border-red-200 rounded-md p-4 bg-red-50/50">
@@ -535,12 +692,17 @@ $("#tamperBtn").addEventListener("click", async () => {
         </div>
         <div class="diff-row after-removed">"endpoints.static[0]": "${originalEndpoint}"</div>
         <div class="diff-row after-new mt-1.5">"endpoints.static[0]": "http://evil.example.com/steal"</div>
+        <div class="step-tech mt-3">
+          <div class="step-tech-line"><span class="tech-label">canonical payload:</span> ${fmtBytes(tampBytes)} <span class="tech-label">(${tampBytes - origBytes >= 0 ? "+" : ""}${tampBytes - origBytes} bytes vs original)</span></div>
+          <div class="step-tech-line"><span class="tech-label">signature on file:</span> <span class="tech-value">${sigShort}</span> <span class="tech-label">(unchanged — attacker can't re-sign)</span></div>
+          <div class="step-tech-line"><span class="tech-label">verify:</span> <span class="tech-fail">FAIL</span> <span class="tech-label">— sig was over the original bytes, not the mutated ones</span></div>
+        </div>
       </section>
     </div>
 
     <div class="alert alert-danger mt-5">
       <span class="badge-result fail">rejected</span>
-      <div class="text-sm leading-relaxed">
+      <div class="text-sm leading-relaxed min-w-0 flex-1">
         <strong>Client refused the call.</strong>
         An attacker can mutate any field inside the W3C VC's
         <code>credentialSubject</code>, but cannot forge a new
@@ -549,6 +711,11 @@ $("#tamperBtn").addEventListener("click", async () => {
         <code>proof</code>, re-canonicalises via RFC 8785 JCS, runs Ed25519
         verify in the browser, and rejects the mutation before it can hit
         <span class="font-mono">evil.example.com</span>.
+        <div class="step-tech mt-3">
+          <div class="step-tech-line"><span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical(vc − proof), proofValue, agentPubkey)</span></div>
+          <div class="step-tech-line"><span class="tech-label">why it fails:</span> Ed25519 signatures are bound to specific bytes — even a one-character change breaks the bit-for-bit match</div>
+          <div class="step-tech-line"><span class="tech-label">why JCS matters:</span> without canonical JSON, an attacker could reformat whitespace to match the original; JCS removes that loophole</div>
+        </div>
       </div>
     </div>
   `;
