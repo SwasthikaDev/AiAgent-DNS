@@ -90,6 +90,11 @@ Single-column layout, full-width buttons, no horizontal scroll. Open Sans typogr
 
 ![Mobile view](docs/demo-05-mobile.png)
 
+### Design &amp; Flow page (`/ui/design.html`)
+A dedicated visual reference linked from the main page — five Mermaid-rendered diagrams covering system architecture, the resolution chain, adaptive routing, tamper detection, and the cryptographic trust hierarchy. Useful for narrating the project to someone who hasn't read the paper.
+
+![Design page](docs/demo-08-design-page.png)
+
 ### CLI output
 
 `python -m nanda.cli resolve urn:agent:demo:echo` prints:
