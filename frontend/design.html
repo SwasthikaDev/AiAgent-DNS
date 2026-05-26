@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NANDA Index Explorer — Design &amp; Flow</title>
+  <meta name="description" content="Visual walkthrough of the NANDA index architecture, resolution flow, adaptive routing, and tamper detection." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Mermaid renders the flow + sequence diagrams as SVG. CDN, no build step. -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+
+  <style type="text/tailwindcss">
+    .card { @apply bg-white rounded-lg border border-slate-200 shadow-sm; }
+    .card-padded { @apply p-5 md:p-7; }
+    .diagram-title { @apply text-lg font-semibold text-slate-900; }
+    .diagram-desc { @apply text-sm text-slate-600 mt-1 mb-5 max-w-3xl leading-relaxed; }
+    .mermaid-box {
+      @apply bg-slate-50 rounded-md border border-slate-200 p-4 md:p-6
+             overflow-x-auto flex justify-center;
+    }
+    .btn-secondary {
+      @apply inline-flex items-center gap-2 bg-white text-slate-800 border border-slate-300
+             rounded-md px-3 py-1.5 text-sm font-semibold
+             hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400;
+    }
+    .key-row {
+      @apply flex items-start gap-3 py-2 border-b border-slate-100 last:border-0;
+    }
+    .key-pill {
+      @apply font-mono text-[11px] uppercase tracking-wider px-2 py-0.5 rounded
+             flex-shrink-0;
+    }
+    .key-pill.idx  { @apply bg-blue-100 text-blue-800; }
+    .key-pill.agt  { @apply bg-violet-100 text-violet-800; }
+    .key-pill.res  { @apply bg-amber-100 text-amber-800; }
+  </style>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- ============== HEADER ============== -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-md bg-blue-700 flex items-center justify-center font-bold text-white text-lg">N</div>
+        <div>
+          <h1 class="text-lg font-semibold text-slate-900">Design &amp; Flow</h1>
+          <p class="text-xs text-slate-500">NANDA Index Explorer · visual reference</p>
+        </div>
+      </div>
+      <a href="index.html" class="btn-secondary">← Back to live demo</a>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-12">
+
+    <!-- ============== INTRO ============== -->
+    <section>
+      <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-1">Visual reference</p>
+      <h2 class="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight max-w-3xl">
+        How agents are discovered, verified, and called.
+      </h2>
+      <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
+        Five diagrams. Each one corresponds to a real flow you can trigger from the
+        <a href="index.html" class="text-blue-700 hover:underline font-medium">live demo</a>:
+        the system architecture, the standard resolution chain, the adaptive routing path,
+        the tamper-detection failure mode, and the cryptographic trust hierarchy.
+        All rendered client-side as SVG via Mermaid.
+      </p>
+    </section>
+
+    <!-- ============== 1. SYSTEM ARCHITECTURE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">Diagram 1</p>
+        <h3 class="diagram-title">System architecture · six services, one lookup</h3>
+        <p class="diagram-desc">
+          The lean index is the only point of first contact. From there, the client follows pointers
+          to the appropriate metadata host, optionally consults the adaptive resolver, and finally
+          calls the agent endpoint. Different agents use different hosting models — the index doesn't care.
+        </p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+flowchart LR
+    Client(["🧑‍💻 Client<br/>(CLI / Browser)"])
+
+    subgraph Tier1 ["Tier 1 · Anchor"]
+        Index["Lean Index<br/>:8000<br/><i>signs AgentAddr</i>"]
+    end
+
+    subgraph Tier2 ["Tier 2 · Metadata (W3C VCs)"]
+        FactsPrimary["Facts Host (primary)<br/>:8001<br/><i>agent-owned</i>"]
+        FactsPrivate["Facts Host (private)<br/>:8002<br/><i>third-party · privacy path</i>"]
+    end
+
+    subgraph Tier3 ["Tier 3 · Runtime"]
+        Resolver["Adaptive Resolver<br/>:8020<br/><i>signs routing token</i>"]
+        AgentA["Agent · echo<br/>:8010"]
+        AgentB["Agent · translate<br/>:8011"]
+    end
+
+    Client -->|1. resolve name| Index
+    Index -->|signed AgentAddr| Client
+    Client -->|2a. fetch facts| FactsPrimary
+    Client -.->|2b. or privacy path| FactsPrivate
+    FactsPrimary -->|signed VC| Client
+    FactsPrivate -.->|signed VC| Client
+    Client -.->|3. optional dispatch| Resolver
+    Resolver -.->|signed token| Client
+    Client ==>|4. POST message| AgentA
+    Client -.-> AgentB
+
+    classDef tier1 fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px
+    classDef tier2 fill:#ede9fe,stroke:#7c3aed,stroke-width:1px
+    classDef tier3 fill:#d1fae5,stroke:#059669,stroke-width:1px
+    class Index tier1
+    class FactsPrimary,FactsPrivate tier2
+    class Resolver,AgentA,AgentB tier3
+</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== 2. RESOLUTION FLOW ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">Diagram 2</p>
+        <h3 class="diagram-title">Resolution flow · the standard 5-step chain</h3>
+        <p class="diagram-desc">
+          This is exactly what runs when you click <em>Resolve</em> on any agent in the live demo.
+          Six HTTP exchanges; two Ed25519 verifications; one endpoint call. Around 300&nbsp;ms end-to-end on localhost.
+        </p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant I as Lean Index
+    participant F as Facts Host
+    participant A as Agent Endpoint
+
+    C->>I: GET /
+    I-->>C: { public_key: 32 B Ed25519 }
+    Note over C: cache index pubkey
+
+    C->>I: GET /resolve/{agent_name}
+    I-->>C: signed AgentAddr<br/>(agent_id, pubkey, facts_url, ttl, sig)
+
+    Note over C: Ed25519 verify<br/>(AgentAddr, idx pubkey)<br/>→ trust the agent pubkey
+
+    C->>F: GET facts_url
+    F-->>C: W3C VC (DataIntegrityProof,<br/>cryptosuite eddsa-jcs-2022)
+
+    Note over C: strip proof block<br/>JCS-canonicalize<br/>Ed25519 verify with<br/>agent pubkey
+
+    C->>A: POST endpoint { message }
+    A-->>C: response
+</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== 3. ADAPTIVE ROUTING ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1">Diagram 3</p>
+        <h3 class="diagram-title">Adaptive routing · when endpoints move fast</h3>
+        <p class="diagram-desc">
+          If the agent's <code>AgentAddr</code> includes an <code>adaptive_resolver_url</code> (the
+          <em>multiregion</em> demo agent does), the client can skip the static endpoint
+          and ask the resolver for a routing token at request time. The token is signed by the resolver
+          and expires in <strong>60&nbsp;seconds</strong>, so even an intercepted token has a tiny damage window.
+        </p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant I as Lean Index
+    participant F as Facts Host
+    participant R as Adaptive Resolver
+    participant A as Agent Endpoint
+
+    C->>I: GET / · GET /resolve/{name}
+    I-->>C: signed AgentAddr<br/>(contains adaptive_resolver_url)
+    C->>F: GET facts_url
+    F-->>C: signed VC
+    Note over C: verify AgentAddr + VC<br/>(same as diagram 2)
+
+    rect rgb(254, 243, 199)
+      Note over C,R: Adaptive dispatch — extra steps 6 & 7
+      C->>R: POST /dispatch<br/>{ agent_name, client_region, policy: geo }
+      R-->>C: signed routing token<br/>(endpoint, region, expires_at, resolver_pubkey, sig)
+      Note over C: Ed25519 verify token<br/>against resolver_pubkey
+    end
+
+    C->>A: POST endpoint { message }
+    A-->>C: response
+</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== 4. TAMPER DETECTION ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-red-700 mb-1">Diagram 4</p>
+        <h3 class="diagram-title">Tamper detection · why mutation fails</h3>
+        <p class="diagram-desc">
+          A man-in-the-middle can intercept and modify the signed VC, but cannot forge a new
+          <code>DataIntegrityProof</code> without the agent's private key. The client re-canonicalizes
+          the mutated document, runs Ed25519 verify, and sees the bit-for-bit mismatch.
+        </p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant M as MITM Attacker
+    participant F as Facts Host
+    participant A as Real Agent
+    participant E as evil.example.com
+
+    C->>F: GET facts_url
+    F-->>M: signed VC<br/>endpoints.static[0]: agent.example.com
+    Note over M: mutates one field:<br/>"endpoints.static[0]":<br/>  "http://evil.example.com/steal"
+    M-->>C: tampered VC<br/>(proofValue UNCHANGED —<br/>attacker can't re-sign)
+
+    Note over C: strip proof block<br/>JCS-canonicalize tampered VC<br/>(761 bytes, was 759)<br/>Ed25519 verify with agent pubkey<br/>→ <b>FAIL</b>
+
+    C-->>C: refuse to call endpoint
+    C--xE: ✗ never reached
+    Note over A: real agent stays untouched
+</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== 5. TRUST CHAIN ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">Diagram 5</p>
+        <h3 class="diagram-title">Trust chain · who signs what, who verifies what</h3>
+        <p class="diagram-desc">
+          Three independent Ed25519 keypairs guard the system. Compromising any one of them
+          limits the blast radius to that key's scope — the other two stay valid.
+        </p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+flowchart TB
+    subgraph Keys ["Three Ed25519 keypairs"]
+        K1["🔑 Index keypair<br/>persisted in data/index_keypair.json"]
+        K2["🔑 Agent keypair (per agent)<br/>persisted in data/agent_keys/&lt;name&gt;.json"]
+        K3["🔑 Resolver keypair<br/>persisted in data/adaptive_resolver_keypair.json"]
+    end
+
+    K1 -.signs.-> AA["AgentAddr<br/>(index pointer record, 1h TTL)"]
+    K2 -.signs.-> VC["W3C VC<br/>(AgentFacts credential, 5m TTL)"]
+    K3 -.signs.-> RT["Routing Token<br/>(short-lived dispatch, 60s TTL)"]
+
+    AA -->|verifies with| IPK["Index pubkey<br/>fetched from GET /"]
+    VC -->|verifies with| APK["Agent pubkey<br/>inside the AgentAddr"]
+    RT -->|verifies with| RPK["Resolver pubkey<br/>inside the routing token"]
+
+    classDef key fill:#fef3c7,stroke:#d97706,stroke-width:1px,color:#78350f
+    classDef doc fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px,color:#1e3a8a
+    classDef pubkey fill:#dcfce7,stroke:#059669,stroke-width:1px,color:#14532d
+    class K1,K2,K3 key
+    class AA,VC,RT doc
+    class IPK,APK,RPK pubkey
+</pre>
+        </div>
+
+        <!-- Key legend / what each key protects -->
+        <div class="mt-6 border-t border-slate-200 pt-5">
+          <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mb-2">What each key protects</p>
+          <div class="key-row">
+            <span class="key-pill idx">Index key</span>
+            <div class="text-sm text-slate-700">Identity of the index itself. If compromised, an attacker could forge AgentAddrs pointing to malicious facts hosts. <span class="text-slate-500">Mitigation: short TTL + key rotation; index pubkey distribution becomes the trust root.</span></div>
+          </div>
+          <div class="key-row">
+            <span class="key-pill agt">Agent key</span>
+            <div class="text-sm text-slate-700">Identity of one specific agent. If compromised, that <em>single</em> agent's facts can be forged. <span class="text-slate-500">Mitigation: re-register with a new pubkey; old facts become unverifiable instantly.</span></div>
+          </div>
+          <div class="key-row">
+            <span class="key-pill res">Resolver key</span>
+            <div class="text-sm text-slate-700">Identity of an adaptive resolver. If compromised, an attacker could forge routing tokens. <span class="text-slate-500">Mitigation: 60s TTL means each forgery is worthless almost immediately; resolvers are easy to swap.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== ROTATION TABLE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Reference</p>
+        <h3 class="diagram-title">Rotation &amp; TTL — every layer has an expiry</h3>
+        <p class="diagram-desc">
+          Each signed object carries its own TTL. Nothing trusts forever. This is the central
+          property that makes NANDA safer than DNS, not just different.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Layer</th>
+                <th class="py-2 pr-4">Object</th>
+                <th class="py-2 pr-4">Default TTL</th>
+                <th class="py-2">What expires at TTL</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-blue-700">Tier 1 · Anchor</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">AgentAddr</td>
+                <td class="py-2.5 pr-4">3600 s (1 h)</td>
+                <td class="py-2.5">Client must re-resolve. New signature with fresh <code>issued_at</code>.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-violet-700">Tier 2 · Metadata</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">AgentFacts VC</td>
+                <td class="py-2.5 pr-4">300 s (5 m)</td>
+                <td class="py-2.5">Client must re-fetch from the facts host. Capabilities may have changed.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-amber-700">Tier 3 · Runtime</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">Routing token</td>
+                <td class="py-2.5 pr-4">60 s</td>
+                <td class="py-2.5">Client must re-dispatch. Endpoint may have moved.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-slate-500 pt-8 border-t border-slate-200">
+      <p>
+        Back to the <a href="index.html" class="text-blue-700 hover:underline font-medium">live demo</a> ·
+        <a href="/docs" class="text-blue-700 hover:underline font-medium">Index API docs</a> ·
+        <a href="https://arxiv.org/pdf/2507.14263" class="text-blue-700 hover:underline font-medium" target="_blank" rel="noopener">NANDA paper (PDF)</a>
+      </p>
+      <p class="mt-2 text-slate-400">Diagrams rendered client-side via Mermaid.</p>
+    </footer>
+  </main>
+
+  <script>
+    // Light theme; Open Sans for labels to match the rest of the UI.
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        fontFamily: "'Open Sans', system-ui, sans-serif",
+        fontSize: "14px",
+        primaryColor: "#dbeafe",
+        primaryTextColor: "#0f172a",
+        primaryBorderColor: "#1d4ed8",
+        lineColor: "#475569",
+        secondaryColor: "#ede9fe",
+        tertiaryColor: "#d1fae5",
+        background: "#f8fafc",
+      },
+      sequence: {
+        actorMargin: 60,
+        boxMargin: 10,
+        noteMargin: 10,
+        messageMargin: 35,
+        diagramMarginY: 20,
+      },
+      flowchart: {
+        curve: "basis",
+        padding: 16,
+        nodeSpacing: 50,
+        rankSpacing: 60,
+      },
+    });
+  </script>
+</body>
+</html>
