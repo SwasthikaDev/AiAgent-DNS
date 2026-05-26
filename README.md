@@ -67,9 +67,13 @@ If a port is already in use locally, run the stack on alternate ports and open t
 ## What it looks like
 
 ### Resolution cascade (web UI)
-Every step is a real HTTP fetch and a real Ed25519 signature check, in the browser via TweetNaCl. The green ✓ is not a server saying "trust me, valid" — it's verified client-side.
+Every step is a real HTTP fetch and a real Ed25519 signature check, in the browser via TweetNaCl. The green ✓ is not a server saying "trust me, valid" — it's verified client-side. Each step exposes the underlying HTTP method, byte counts, cryptosuite, and the exact `nacl.sign.detached.verify` call so a reviewer can read off what's happening without having to open devtools.
 
 ![Resolution cascade](docs/demo-02-cascade.png)
+
+A closer look at the per-step technical detail — useful for narrating the chain during a demo:
+
+![Tech detail closeup](docs/demo-07-tech-closeup.png)
 
 ### Tamper detection
 The client refuses to call an endpoint whose signed document was mutated in flight. Same Ed25519 primitive in the browser.
