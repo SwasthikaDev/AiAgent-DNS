@@ -100,26 +100,32 @@ sequenceDiagram
     U->>C: "Book flight Mumbai → Singapore<br/>on June 10, 2026"
 
     rect rgb(219, 234, 254)
-      Note over C,I: Phase 1 · DISCOVER — find the agent
+      Note over C,I: 📍 PHASE 1 · DISCOVER<br/>find which agent to call
       C->>I: GET / (fetch index pubkey)
       I-->>C: index_pubkey (32 B Ed25519)
       C->>I: GET /resolve/urn:agent:flights:demo
-      Note right of I: index builds fresh AgentAddr<br/>signs with K_index (Ed25519)<br/>over JCS-canonical bytes
+
+      Note right of I: IETF RFC 8785 (JCS)<br/>index builds AgentAddr,<br/>canonicalises bytes,<br/>signs with K_index (Ed25519)
+
       I-->>C: signed AgentAddr<br/>{ pubkey, facts_url, ttl, sig }
     end
 
     rect rgb(220, 252, 231)
-      Note over C: Phase 2 · VERIFY — cryptographic trust chain
-      Note right of C: 🔐 VERIFY #1 (AgentAddr)<br/>nacl.sign.detached.verify(<br/>  JCS-canonical(addr − sig),<br/>  sig,<br/>  index_pubkey)<br/>→ trust the agent's pubkey
+      Note over C: 🔐 PHASE 2 · VERIFY<br/>two independent Ed25519 checks
+
+      Note right of C: ① VERIFY AgentAddr<br/>IETF RFC 8785 canonicalise<br/>nacl.sign.detached.verify(<br/>    canonical(addr − sig),<br/>    sig,<br/>    index_pubkey)<br/>→ trust agent's pubkey
 
       C->>F: GET facts_url
-      F-->>C: W3C VerifiableCredential v2<br/>DataIntegrityProof<br/>cryptosuite: eddsa-jcs-2022<br/>contains: endpoints, skills, capabilities
 
-      Note right of C: 🔐 VERIFY #2 (AgentFacts VC)<br/>strip proof block<br/>JCS-canonicalize (RFC 8785)<br/>nacl.sign.detached.verify(<br/>  canonical(VC − proof),<br/>  proof.proofValue,<br/>  agent_pubkey)<br/>→ trust the endpoint URL
+      Note right of F: W3C VC Data Model v2<br/>W3C Data Integrity Proof<br/>W3C cryptosuite: eddsa-jcs-2022<br/>document below is fully<br/>standards-compliant
+
+      F-->>C: W3C VerifiableCredential v2<br/>type: AgentFactsCredential<br/>proof: DataIntegrityProof<br/>cryptosuite: eddsa-jcs-2022<br/>contains: endpoints, skills, capabilities
+
+      Note right of C: ② VERIFY AgentFacts VC<br/>strip W3C proof block<br/>IETF RFC 8785 canonicalise<br/>nacl.sign.detached.verify(<br/>    canonical(VC − proof),<br/>    proof.proofValue,<br/>    agent_pubkey)<br/>→ trust the endpoint URL
     end
 
     rect rgb(254, 243, 199)
-      Note over C,A: Phase 3 · CALL — now safe to invoke
+      Note over C,A: ☎ PHASE 3 · CALL<br/>only happens after both verifications pass
       C->>A: POST /book<br/>{ from: "Mumbai", to: "Singapore",<br/>  date: "2026-06-10" }
       Note right of A: agent processes the booking
       A-->>C: { confirmation: "ABC123",<br/>  price: "$420", seat: "14A" }
@@ -127,6 +133,10 @@ sequenceDiagram
 
     C-->>U: "✅ Booked. Confirmation ABC123, $420, seat 14A"
 </pre>
+
+<p class="text-[11px] text-slate-500 font-mono mt-2 text-center">
+  marks where a W3C / IETF standard governs the operation
+</p>
         </div>
 
         <!-- "What's actually signed" callout -->
@@ -157,6 +167,52 @@ sequenceDiagram
           RFC 8785 canonical JSON. If anyone tampers with the endpoint URL, the chain breaks and the
           flight booking call is refused before it leaves the client.
         </p>
+
+        <!-- Standards in play -->
+        <div class="mt-6 border-t border-slate-200 pt-5">
+          <p class="text-xs uppercase tracking-widest font-semibold text-slate-600 mb-3">🌐 Standards applied in this flow</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="border border-blue-200 rounded-md p-3 bg-blue-50">
+              <p class="text-[11px] uppercase tracking-wider font-bold text-blue-800">W3C VC Data Model v2</p>
+              <p class="text-xs text-slate-700 mt-1.5 leading-snug">
+                Defines the JSON-LD envelope for AgentFacts:
+                <code>@context</code>, <code>type</code>, <code>issuer</code>,
+                <code>credentialSubject</code>, <code>proof</code>.
+              </p>
+              <p class="text-[10px] text-slate-500 mt-1.5 font-mono">w3.org/TR/vc-data-model-2.0</p>
+            </div>
+            <div class="border border-blue-200 rounded-md p-3 bg-blue-50">
+              <p class="text-[11px] uppercase tracking-wider font-bold text-blue-800">W3C Data Integrity</p>
+              <p class="text-xs text-slate-700 mt-1.5 leading-snug">
+                Defines the <code>DataIntegrityProof</code> block:
+                <code>cryptosuite</code>, <code>verificationMethod</code>,
+                <code>proofPurpose</code>, <code>proofValue</code>.
+              </p>
+              <p class="text-[10px] text-slate-500 mt-1.5 font-mono">w3.org/TR/vc-data-integrity</p>
+            </div>
+            <div class="border border-blue-200 rounded-md p-3 bg-blue-50">
+              <p class="text-[11px] uppercase tracking-wider font-bold text-blue-800">W3C eddsa-jcs-2022</p>
+              <p class="text-xs text-slate-700 mt-1.5 leading-snug">
+                The specific cryptosuite that combines Ed25519 signing with
+                JCS canonicalisation. The string <code>eddsa-jcs-2022</code>
+                appears literally in the proof block.
+              </p>
+              <p class="text-[10px] text-slate-500 mt-1.5 font-mono">w3.org/TR/vc-di-eddsa</p>
+            </div>
+            <div class="border border-amber-200 rounded-md p-3 bg-amber-50">
+              <p class="text-[11px] uppercase tracking-wider font-bold text-amber-800">IETF RFC 8785 — JCS</p>
+              <p class="text-xs text-slate-700 mt-1.5 leading-snug">
+                JSON Canonicalisation Scheme. Guarantees a byte-for-byte
+                identical serialisation across implementations so signatures
+                survive whitespace and key-order differences.
+              </p>
+              <p class="text-[10px] text-slate-500 mt-1.5 font-mono">datatracker.ietf.org/doc/html/rfc8785</p>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-3 italic">
+            Every signature in the system uses these four standards. The MVP doesn't ship hand-rolled crypto anywhere.
+          </p>
+        </div>
       </div>
     </section>
 
@@ -442,7 +498,7 @@ flowchart TB
       theme: "base",
       themeVariables: {
         fontFamily: "'Open Sans', system-ui, sans-serif",
-        fontSize: "14px",
+        fontSize: "16px",
         primaryColor: "#dbeafe",
         primaryTextColor: "#0f172a",
         primaryBorderColor: "#1d4ed8",
@@ -450,19 +506,32 @@ flowchart TB
         secondaryColor: "#ede9fe",
         tertiaryColor: "#d1fae5",
         background: "#f8fafc",
+        noteBkgColor: "#fef3c7",
+        noteTextColor: "#0f172a",
+        noteBorderColor: "#d97706",
+        actorBkg: "#ffffff",
+        actorBorder: "#1d4ed8",
+        actorTextColor: "#0f172a",
       },
       sequence: {
-        actorMargin: 60,
-        boxMargin: 10,
-        noteMargin: 10,
-        messageMargin: 35,
-        diagramMarginY: 20,
+        // useMaxWidth: false lets diagrams render at their native (larger) size;
+        // the container has overflow-x-auto so wide ones scroll horizontally.
+        useMaxWidth: false,
+        actorMargin: 90,
+        boxMargin: 14,
+        noteMargin: 14,
+        messageMargin: 45,
+        diagramMarginY: 30,
+        wrap: true,
+        width: 220,
+        height: 60,
       },
       flowchart: {
+        useMaxWidth: false,
         curve: "basis",
-        padding: 16,
-        nodeSpacing: 50,
-        rankSpacing: 60,
+        padding: 24,
+        nodeSpacing: 60,
+        rankSpacing: 80,
       },
     });
   </script>
