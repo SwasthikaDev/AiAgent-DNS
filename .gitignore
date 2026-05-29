@@ -21,3 +21,6 @@ data/
 
 # Playwright artifacts from local UI testing
 .playwright-mcp/
+
+# Demo screen recordings (generated locally by scripts/record_demo.py)
+recordings/
