@@ -15,6 +15,16 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+
+# Windows consoles default to cp1252, which can't encode the ✔/→ glyphs this
+# CLI prints — that raises UnicodeEncodeError and crashes the command. Force
+# UTF-8 on stdout/stderr so the client runs cleanly on a stock Windows shell.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
 
 import httpx
 import typer
