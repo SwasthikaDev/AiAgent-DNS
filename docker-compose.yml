@@ -76,11 +76,13 @@ services:
       NANDA_DATA_DIR: /data
       ADAPTIVE_TOKEN_TTL: "60"
       # Two endpoints in the pool — geo + capability-aware routing demo.
+      # Endpoints the resolver hands back must be reachable by the *client*
+      # (host CLI / browser), not container-to-container — so use localhost.
       ADAPTIVE_POOLS: |
         {
           "urn:agent:demo:multiregion": [
-            {"url": "http://agent-echo:8010/echo",       "region": "us-east", "capabilities": ["echo"]},
-            {"url": "http://agent-translate:8011/translate","region": "eu-west", "capabilities": ["translate"]}
+            {"url": "http://localhost:8010/echo",       "region": "us-east", "capabilities": ["echo"]},
+            {"url": "http://localhost:8011/translate","region": "eu-west", "capabilities": ["translate"]}
           ]
         }
     volumes:
