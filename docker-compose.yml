@@ -26,6 +26,9 @@ services:
       NANDA_DATA_DIR: /data
     volumes:
       - ./data:/data
+      # Live-mount the UI so frontend edits show on refresh without a rebuild.
+      # The image still bakes frontend/ in (Dockerfile) for deploys with no mount.
+      - ./frontend:/app/frontend:ro
 
   facts-primary:
     build: .
