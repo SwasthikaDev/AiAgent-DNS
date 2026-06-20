@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NANDA Index Explorer — Design &amp; Flow</title>
   <meta name="description" content="Visual walkthrough of the NANDA index architecture, resolution flow, adaptive routing, and tamper detection." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231d4ed8'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>N</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -43,7 +44,7 @@
 
   <!-- ============== HEADER ============== -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
-    <div class="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+    <div class="max-w-[1760px] mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 rounded-md bg-blue-700 flex items-center justify-center font-bold text-white text-lg">N</div>
         <div>
@@ -55,7 +56,7 @@
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-12">
+  <main class="max-w-[1760px] mx-auto px-4 md:px-8 py-8 md:py-12 space-y-12">
 
     <!-- ============== INTRO ============== -->
     <section>
@@ -69,7 +70,9 @@
         and every W3C operation labelled. The other five are technical drill-downs you can refer
         back to: the system architecture, the standard resolution chain, the adaptive routing path,
         the tamper-detection failure mode, and the cryptographic trust hierarchy.
-        All rendered client-side as SVG via Mermaid.
+        All rendered client-side as SVG via Mermaid. Below the diagrams, two written sections cover
+        the <strong>design rationale</strong> (why it's built this way) and the
+        <strong>limitations &amp; deferred scope</strong>.
       </p>
     </section>
 
@@ -481,6 +484,134 @@ flowchart TB
       </div>
     </section>
 
+    <!-- ============== DESIGN RATIONALE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Rationale</p>
+        <h3 class="diagram-title">Why it's built this way · the decisions behind the diagrams</h3>
+        <p class="diagram-desc">
+          The whole architecture follows from one idea: <strong>split identity from metadata</strong>, so the
+          index can stay tiny and rarely-written while everything volatile lives in documents that can be
+          re-published at any moment <em>without touching the index</em>. DNS bundles the two and updates in
+          minutes-to-hours; at trillions of agents that move every few seconds, that breaks. Separating them
+          cuts index write-load by roughly <strong>10<sup>4</sup>×</strong> while keeping sub-second global resolution.
+        </p>
+
+        <div class="space-y-4 mt-5">
+          <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
+            <p class="text-sm font-semibold text-slate-800">Why the index re-signs a fresh AgentAddr on every resolve</p>
+            <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+              The signature covers an <code>issued_at</code> timestamp, so the index stores <em>no</em> signature at
+              rest — it stamps and signs at lookup time. That keeps records cacheable only within their TTL window
+              and means a captured AgentAddr can't be replayed indefinitely. See
+              <code>_row_to_agent_addr</code> in <code>services/index_service/main.py</code>.
+            </p>
+          </div>
+
+          <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
+            <p class="text-sm font-semibold text-slate-800">Why AgentFacts is a W3C VC but AgentAddr is just a detached signature</p>
+            <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+              AgentFacts is a <em>claim about an agent</em> — capabilities, skills, endpoints — so it gets the full
+              W3C Verifiable Credential envelope (<code>DataIntegrityProof</code>, <code>eddsa-jcs-2022</code>),
+              making it interoperable with any VC-aware verifier. AgentAddr is merely a pointer record the index
+              asserts, so a plain detached Ed25519 signature is sufficient and leaner. Same primitive, two envelopes.
+            </p>
+          </div>
+
+          <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
+            <p class="text-sm font-semibold text-slate-800">Why the facts host is a deliberately "dumb", untrusted store</p>
+            <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+              The host never verifies signatures on upload — it only checks document shape. Trust is entirely the
+              client's job. This means compromising a facts host (or the network in front of it) <em>cannot</em>
+              forge metadata: the agent's signature still fails verification. It also decouples hosting from trust,
+              which is what makes the third-party <strong>privacy path</strong> possible.
+            </p>
+          </div>
+
+          <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
+            <p class="text-sm font-semibold text-slate-800">Why two facts hosts instead of one</p>
+            <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+              Same service, two roles: an agent-owned <em>primary</em> host (<code>:8001</code>) and a neutral
+              <em>third-party</em> host (<code>:8002</code>) for the privacy path. Running both makes the paper's
+              "quilt" of registration models concrete instead of theoretical, at near-zero extra cost.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== LIMITATIONS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-red-700 mb-1">Honest scope</p>
+        <h3 class="diagram-title">Limitations &amp; what's deliberately out of scope</h3>
+        <p class="diagram-desc">
+          This is an MVP that proves the core flow end-to-end. Several features from the paper are intentionally
+          deferred — each is a real upgrade path, not a dead end. The biggest gap is <strong>revocation</strong>:
+          the paper makes sub-second VC-Status revocation a centrepiece, and this build relies on TTL expiry alone.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Feature</th>
+                <th class="py-2 pr-4">Paper §</th>
+                <th class="py-2 pr-4">MVP status</th>
+                <th class="py-2">Upgrade path</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">Revocation / VC-Status</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">§VII.D</td>
+                <td class="py-2.5 pr-4"><span class="text-red-700 font-semibold">TTL only</span></td>
+                <td class="py-2.5">Add a VC-Status list credential + a status endpoint the client checks during verify.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">DID resolution</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">§IV</td>
+                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">URN only</span></td>
+                <td class="py-2.5"><code>agent_name</code> is a plain URN; add <code>did:web</code> / <code>did:key</code> resolution.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">Privacy path transport</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">§VI, §VII.C</td>
+                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">2nd HTTP host</span></td>
+                <td class="py-2.5">Real anonymity needs IPFS / Tor / mix-net hosting, not just a separate host.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">Enterprise registry quilt</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">§IV.B, Table 1</td>
+                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">2 of 6 styles</span></td>
+                <td class="py-2.5">Add enterprise-routed and Web3/DID-marketplace registration types.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">Index federation</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">§IV.C</td>
+                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">Single index</span></td>
+                <td class="py-2.5">Cross-index verifiable links so the "quilt" spans organisations.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">Auth on <code>/register</code></td>
+                <td class="py-2.5 pr-4 font-mono text-xs">—</td>
+                <td class="py-2.5 pr-4"><span class="text-red-700 font-semibold">Open</span></td>
+                <td class="py-2.5">Anyone can register an agent; fine for a demo, needs auth + rate-limiting in prod.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-slate-800">Storage</td>
+                <td class="py-2.5 pr-4 font-mono text-xs">§VIII.B</td>
+                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">SQLite</span></td>
+                <td class="py-2.5">Swap for a sharded KV store to hit the 10k resolves/sec/shard target.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-4 italic">
+          The crypto is real and the Level-1 flow works end-to-end; what's deferred is breadth, not correctness.
+        </p>
+      </div>
+    </section>
+
     <footer class="text-center text-xs text-slate-500 pt-8 border-t border-slate-200">
       <p>
         Back to the <a href="index.html" class="text-blue-700 hover:underline font-medium">live demo</a> ·
@@ -498,7 +629,7 @@ flowchart TB
       theme: "base",
       themeVariables: {
         fontFamily: "'Open Sans', system-ui, sans-serif",
-        fontSize: "16px",
+        fontSize: "12px",
         primaryColor: "#dbeafe",
         primaryTextColor: "#0f172a",
         primaryBorderColor: "#1d4ed8",
@@ -514,24 +645,30 @@ flowchart TB
         actorTextColor: "#0f172a",
       },
       sequence: {
-        // useMaxWidth: false lets diagrams render at their native (larger) size;
-        // the container has overflow-x-auto so wide ones scroll horizontally.
+        // Compact-but-readable: small fonts + tight spacing so even the big
+        // headline diagram fits the container without horizontal scrolling,
+        // while staying legible. useMaxWidth:true caps each diagram at the
+        // container width (never overflows) but won't upscale past native size.
         useMaxWidth: false,
-        actorMargin: 90,
-        boxMargin: 14,
-        noteMargin: 14,
-        messageMargin: 45,
-        diagramMarginY: 30,
+        actorMargin: 42,
+        boxMargin: 8,
+        noteMargin: 8,
+        messageMargin: 24,
+        diagramMarginX: 6,
+        diagramMarginY: 14,
         wrap: true,
-        width: 220,
-        height: 60,
+        width: 140,
+        height: 36,
+        actorFontSize: 13,
+        noteFontSize: 11,
+        messageFontSize: 12,
       },
       flowchart: {
         useMaxWidth: false,
         curve: "basis",
-        padding: 24,
-        nodeSpacing: 60,
-        rankSpacing: 80,
+        padding: 14,
+        nodeSpacing: 40,
+        rankSpacing: 55,
       },
     });
   </script>

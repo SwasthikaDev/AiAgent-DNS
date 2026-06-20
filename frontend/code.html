@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NANDA Index Explorer — How the Code Works</title>
+  <meta name="description" content="How the NANDA prototype is structured: file map, the call-routing trace, the functions involved, and what is and isn't implemented from the paper." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231d4ed8'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>N</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style type="text/tailwindcss">
+    .card { @apply bg-white rounded-lg border border-slate-200 shadow-sm; }
+    .card-padded { @apply p-5 md:p-7; }
+    .sec-title { @apply text-lg font-semibold text-slate-900; }
+    .sec-desc  { @apply text-sm text-slate-600 mt-1 mb-5 max-w-3xl leading-relaxed; }
+    .btn-secondary {
+      @apply inline-flex items-center gap-2 bg-white text-slate-800 border border-slate-300
+             rounded-md px-3 py-1.5 text-sm font-semibold
+             hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400;
+    }
+    .mono { @apply font-mono text-[13px]; }
+    .pill { @apply inline-block px-1.5 py-px rounded text-[11px] font-bold align-middle; }
+    .pill-get  { @apply bg-emerald-100 text-emerald-800; }
+    .pill-post { @apply bg-blue-100 text-blue-800; }
+    .pill-fn   { @apply bg-violet-100 text-violet-800 font-mono; }
+    .file      { @apply font-mono text-[13px] text-blue-800; }
+    .step {
+      @apply flex gap-3 py-2.5 border-b border-slate-100 last:border-0;
+    }
+    .step-n {
+      @apply w-6 h-6 rounded-full bg-slate-800 text-white text-xs font-bold
+             flex items-center justify-center flex-shrink-0;
+    }
+    .yes { @apply text-emerald-700 font-semibold; }
+    .partial { @apply text-amber-700 font-semibold; }
+    .no  { @apply text-red-700 font-semibold; }
+    th, td { @apply align-top; }
+  </style>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- ============== HEADER ============== -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-[1100px] mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-md bg-blue-700 flex items-center justify-center font-bold text-white text-lg">N</div>
+        <div>
+          <h1 class="text-lg font-semibold text-slate-900">How the Code Works</h1>
+          <p class="text-xs text-slate-500">NANDA Index Explorer · engineering reference</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <a href="design.html" class="btn-secondary">Design &amp; flow</a>
+        <a href="index.html" class="btn-secondary">← Live demo</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-[1100px] mx-auto px-4 md:px-8 py-8 md:py-12 space-y-10">
+
+    <!-- ============== INTRO ============== -->
+    <section>
+      <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-1">Engineering reference</p>
+      <h2 class="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight max-w-3xl">
+        What each file does, and exactly what runs on a request.
+      </h2>
+      <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
+        Four parts: a <strong>map of the repo</strong>, a <strong>step-by-step trace</strong> of the functions
+        that fire when you resolve and call an agent, a <strong>function reference</strong>, and an honest
+        <strong>implemented-vs-paper</strong> table. The signing/verifying core is one small file
+        (<span class="file">nanda/crypto.py</span>); everything else is plumbing around it.
+      </p>
+    </section>
+
+    <!-- ============== 1. REPO MAP ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-blue-700 mb-1">1 · Repository map</p>
+        <h3 class="sec-title">What file holds what</h3>
+        <p class="sec-desc">
+          Three layers: a shared library (<span class="file">nanda/</span>), the six FastAPI services
+          (<span class="file">services/</span>), and the no-build web UI (<span class="file">frontend/</span>).
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">Shared library — <span class="file">nanda/</span></p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 w-64"><span class="file">crypto.py</span></td><td class="py-2 text-slate-700">The heart. Ed25519 + JCS canonical JSON. <span class="pill-fn pill">canonicalize</span> <span class="pill-fn pill">sign_payload</span> <span class="pill-fn pill">verify_payload</span> (AgentAddr), <span class="pill-fn pill">sign_vc_payload</span> <span class="pill-fn pill">verify_vc</span> (W3C VC), <span class="pill-fn pill">pubkey_to_did_key</span> <span class="pill-fn pill">verify_vc_via_did</span> (did:key).</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">schemas.py</span></td><td class="py-2 text-slate-700">Pydantic wire models: <span class="mono">RegisterRequest</span>, <span class="mono">AgentAddr</span>, <span class="mono">AgentFactsVC</span>, <span class="mono">DataIntegrityProof</span>. Defines what travels between services.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">cli.py</span></td><td class="py-2 text-slate-700">The client. Commands: <span class="mono">list</span>, <span class="mono">resolve</span>, <span class="mono">call</span>, <span class="mono">verify-did</span>, <span class="mono">demo-tamper</span>. Helper <span class="pill-fn pill">_resolve_chain</span> walks index→AgentAddr→AgentFacts and verifies every signature.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">Services — <span class="file">services/</span> (each a FastAPI app)</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 w-64"><span class="file">index_service/main.py</span> <span class="text-slate-400">:8000</span></td><td class="py-2 text-slate-700">The lean index. Routes <span class="pill pill-get">GET</span> <span class="mono">/</span>, <span class="pill pill-post">POST/PUT</span> <span class="mono">/register</span>, <span class="pill pill-get">GET</span> <span class="mono">/resolve/{name}</span>, <span class="pill pill-get">GET</span> <span class="mono">/agents</span>. Signs each AgentAddr via <span class="pill-fn pill">_row_to_agent_addr</span>. Also serves <span class="mono">/ui</span>.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">index_service/db.py</span></td><td class="py-2 text-slate-700">SQLite layer — one <span class="mono">agents</span> table. <span class="pill-fn pill">get_by_name</span> <span class="pill-fn pill">insert_agent</span> <span class="pill-fn pill">list_agents</span> <span class="pill-fn pill">upsert_agent</span>.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">facts_host/main.py</span> <span class="text-slate-400">:8001 / :8002</span></td><td class="py-2 text-slate-700">Dumb store for signed VCs. <span class="pill pill-post">PUT</span>/<span class="pill pill-get">GET</span> <span class="mono">/facts/{id}</span>. One image, two roles (primary + private). Never verifies — that's the client's job.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">agents/main.py</span> <span class="text-slate-400">:8010 / :8011</span></td><td class="py-2 text-slate-700">Sample agents. <span class="pill pill-post">POST</span> <span class="mono">/echo</span>, <span class="pill pill-post">POST</span> <span class="mono">/translate</span>. The thing you call after verifying.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">adaptive_resolver/main.py</span> <span class="text-slate-400">:8020</span></td><td class="py-2 text-slate-700">§VI dispatcher. <span class="pill pill-post">POST</span> <span class="mono">/dispatch</span> → picks an endpoint via <span class="pill-fn pill">_pick_endpoint</span> (geo / capability / round-robin) and returns a signed, TTL-scoped routing token.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">Frontend — <span class="file">frontend/</span> (no build step) &amp; scripts</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 w-64"><span class="file">app.js</span></td><td class="py-2 text-slate-700">Browser verifier (TweetNaCl). <span class="pill-fn pill">canonicalize</span> <span class="pill-fn pill">verifyEd25519</span> <span class="pill-fn pill">verifyVC</span> <span class="pill-fn pill">runResolutionCascade</span> + the call &amp; tamper handlers. Mirrors <span class="file">crypto.py</span> byte-for-byte.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">index.html / design.html / code.html</span></td><td class="py-2 text-slate-700">Demo UI · visual diagrams · this page.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">config.js</span></td><td class="py-2 text-slate-700">Service URLs (overridable via query params).</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">scripts/bootstrap.py</span></td><td class="py-2 text-slate-700">Registers the demo agents and publishes their signed VCs. <span class="pill-fn pill">register_agent</span>.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">tests/test_crypto.py</span></td><td class="py-2 text-slate-700">10 unit tests: detached-sig + VC roundtrip + tamper + did:key.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== 2. CALL ROUTING TRACE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1">2 · Routing trace</p>
+        <h3 class="sec-title">What runs when you call an agent</h3>
+        <p class="sec-desc">
+          Tracing <span class="mono">Resolve &amp; Call</span> on the <span class="mono">multiregion</span> agent with
+          adaptive routing on. Each step shows the HTTP hop, the service handler it lands in, and the function chain.
+          The same chain runs in the CLI (<span class="pill-fn pill">_resolve_chain</span>) — only the verifier
+          library differs (browser TweetNaCl vs CLI PyNaCl).
+        </p>
+
+        <div class="border border-slate-200 rounded-md p-4 bg-slate-50/60">
+          <div class="step">
+            <div class="step-n">1</div>
+            <div><span class="font-semibold">Fetch the index public key.</span><br/>
+              <span class="pill pill-get">GET</span> <span class="mono">:8000/</span> → <span class="file">index_service.main</span> <span class="pill-fn pill">root()</span>.
+              Browser caches it as the trust anchor. <span class="text-slate-500">app.js <span class="pill-fn pill">fetchIndexPubkeyRich</span></span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">2</div>
+            <div><span class="font-semibold">Resolve the name → signed AgentAddr.</span><br/>
+              <span class="pill pill-get">GET</span> <span class="mono">:8000/resolve/{name}</span> → <span class="pill-fn pill">resolve()</span> → db <span class="pill-fn pill">get_by_name()</span> → <span class="pill-fn pill">_row_to_agent_addr()</span> → crypto <span class="pill-fn pill">sign_payload()</span>.
+              The index <em>signs the record on the fly</em> with its private key.
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">3</div>
+            <div><span class="font-semibold">Verify the AgentAddr (in the client).</span><br/>
+              app.js <span class="pill-fn pill">verifyEd25519(addr, indexPub)</span> → <span class="pill-fn pill">canonicalize()</span> + <span class="mono">nacl.sign.detached.verify</span>.
+              Fail → stop. Pass → trust the agent's <span class="mono">public_key</span> carried inside the AgentAddr.
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">4</div>
+            <div><span class="font-semibold">Fetch the AgentFacts VC.</span><br/>
+              <span class="pill pill-get">GET</span> <span class="mono">:8001/facts/{id}</span> → <span class="file">facts_host.main</span> <span class="pill-fn pill">get_facts()</span> (a dumb file read — no verification here).
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">5</div>
+            <div><span class="font-semibold">Verify the VC (in the client).</span><br/>
+              app.js <span class="pill-fn pill">verifyVC(facts, addr.public_key)</span> → strips <span class="mono">proof</span>, re-canonicalizes, Ed25519-verifies.
+              <span class="text-slate-500">(CLI equivalent: crypto <span class="pill-fn pill">verify_vc</span>, or <span class="pill-fn pill">verify_vc_via_did</span> for the did:key path.)</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">6</div>
+            <div><span class="font-semibold">Dispatch via the Adaptive Resolver (§VI).</span><br/>
+              <span class="pill pill-post">POST</span> <span class="mono">:8020/dispatch</span> → <span class="file">adaptive_resolver.main</span> <span class="pill-fn pill">dispatch()</span> → <span class="pill-fn pill">_pick_endpoint()</span> (geo match) → crypto <span class="pill-fn pill">sign_payload()</span> signs a 60-second routing token.
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">7</div>
+            <div><span class="font-semibold">Verify the routing token (in the client).</span><br/>
+              app.js <span class="pill-fn pill">verifyEd25519(token, token.resolver_pubkey)</span>. Fail → refuse to route.
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-n">8</div>
+            <div><span class="font-semibold">Call the verified endpoint.</span><br/>
+              <span class="pill pill-post">POST</span> <span class="mono">:8011/translate</span> → <span class="file">agents.main</span> <span class="pill-fn pill">translate()</span> → response rendered.
+            </div>
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-500 mt-4 leading-relaxed">
+          Without <em>--adaptive</em>, steps 6–7 are skipped and the endpoint comes straight from
+          <span class="mono">facts.credentialSubject.endpoints.static[0]</span> (step 5). Three signatures total are
+          checked client-side: AgentAddr (index key), AgentFacts VC (agent key), routing token (resolver key).
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 3. KEY FUNCTIONS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-violet-700 mb-1">3 · Function reference</p>
+        <h3 class="sec-title">The functions that matter</h3>
+        <p class="sec-desc">The ones a reviewer will ask about, grouped by what they do.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Function</th><th class="py-2 pr-4">File</th><th class="py-2">Does</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">canonicalize</span></td><td class="py-2 pr-4 file">crypto.py / app.js</td><td class="py-2 text-slate-700">RFC 8785 JCS — sorted keys, no whitespace, UTF-8. Same bytes on both sides so signatures match.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">sign_payload</span> / <span class="pill-fn pill">verify_payload</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">Detached Ed25519 over a plain object. Used for AgentAddr and routing tokens.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">sign_vc_payload</span> / <span class="pill-fn pill">verify_vc</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">W3C VC v2 with DataIntegrityProof (eddsa-jcs-2022). Used for AgentFacts. Signs before the proof block exists.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">pubkey_to_did_key</span> / <span class="pill-fn pill">verify_vc_via_did</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">did:key: encode the key into the identifier; verify a VC by recovering the key from its own verificationMethod — no index-supplied key needed.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">_row_to_agent_addr</span></td><td class="py-2 pr-4 file">index_service/main.py</td><td class="py-2 text-slate-700">Builds + signs an AgentAddr from a DB row at resolve time (fresh issued_at each call).</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">_pick_endpoint</span></td><td class="py-2 pr-4 file">adaptive_resolver/main.py</td><td class="py-2 text-slate-700">Chooses an endpoint by policy: geo region, requested capability, else round-robin.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">_resolve_chain</span></td><td class="py-2 pr-4 file">cli.py</td><td class="py-2 text-slate-700">CLI driver — runs the 5-step verify chain and prints each check.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">runResolutionCascade</span></td><td class="py-2 pr-4 file">app.js</td><td class="py-2 text-slate-700">Browser equivalent — same chain, animated, verified in-page via TweetNaCl.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== 4. IMPLEMENTED vs PAPER ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">4 · Implemented vs. the paper</p>
+        <h3 class="sec-title">What's built, what's deferred</h3>
+        <p class="sec-desc">
+          An honest scorecard against <em>Beyond DNS</em>. <span class="yes">✔ built</span> ·
+          <span class="partial">△ partial</span> · <span class="no">✖ not yet</span>. The deferred items are scope
+          calls, not dead ends — each has a clear path.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Paper feature</th><th class="py-2 pr-4">§</th><th class="py-2 pr-4">Status</th><th class="py-2">Notes</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Lean index → signed AgentAddr</td><td class="py-2 pr-4 mono">IV</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">Ed25519 detached sig, SQLite-backed.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">AgentFacts as W3C VC v2</td><td class="py-2 pr-4 mono">V, VII</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">DataIntegrityProof, cryptosuite eddsa-jcs-2022.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Two-step resolution + client verify</td><td class="py-2 pr-4 mono">IV–V</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">Verified in CLI (PyNaCl) and browser (TweetNaCl).</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Tamper detection</td><td class="py-2 pr-4 mono">VII</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">Mutated VC rejected client-side.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Adaptive resolver + signed token</td><td class="py-2 pr-4 mono">VI</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">Geo / capability / round-robin, 60s TTL.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">TTL at all three layers</td><td class="py-2 pr-4 mono">V.E</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">AgentAddr 1h, VC 5m, token 60s.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">did:key key resolution</td><td class="py-2 pr-4 mono">IV, VII</td><td class="py-2 pr-4 yes">✔ built</td><td class="py-2 text-slate-600">Key recovered from the VC's verificationMethod.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Privacy path (dual hosting)</td><td class="py-2 pr-4 mono">IV.B, VII.C</td><td class="py-2 pr-4 partial">△ partial</td><td class="py-2 text-slate-600">2nd HTTP host — hosting decoupling, not IPFS/Tor anonymity.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Quilt / registration types</td><td class="py-2 pr-4 mono">IV.B</td><td class="py-2 pr-4 partial">△ partial</td><td class="py-2 text-slate-600">2 of 6 Table-1 styles (native + third-party hosted).</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">VC-Status revocation</td><td class="py-2 pr-4 mono">VII.D</td><td class="py-2 pr-4 no">✖ not yet</td><td class="py-2 text-slate-600">TTL expiry only. Add a status list + check in verify.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">DID (did:web) &amp; credential hashes in index</td><td class="py-2 pr-4 mono">IV</td><td class="py-2 pr-4 no">✖ not yet</td><td class="py-2 text-slate-600">Index stores full pubkey; paper stores a hash + resolves via DID.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Index federation</td><td class="py-2 pr-4 mono">IV.C</td><td class="py-2 pr-4 no">✖ not yet</td><td class="py-2 text-slate-600">Single index. Add cross-index verifiable links.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Enterprise registry routing</td><td class="py-2 pr-4 mono">IV.B</td><td class="py-2 pr-4 no">✖ not yet</td><td class="py-2 text-slate-600">Table-1 styles 3–6.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Auth on /register</td><td class="py-2 pr-4 mono">—</td><td class="py-2 pr-4 no">✖ not yet</td><td class="py-2 text-slate-600">Open registration; needs auth + rate limiting.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Trust scores, telemetry, evaluations</td><td class="py-2 pr-4 mono">V, VII.B</td><td class="py-2 pr-4 no">✖ not yet</td><td class="py-2 text-slate-600">AgentFacts schema is trimmed to demo essentials.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">IPFS / Tor / ZKPs / trillion-scale</td><td class="py-2 pr-4 mono">VI, X</td><td class="py-2 pr-4 no">✖ out of scope</td><td class="py-2 text-slate-600">External infra, research, or multi-quarter scale work.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-4 italic">
+          The crypto is real and Level-1 works end-to-end; what's deferred is breadth and scale, not correctness.
+        </p>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-slate-500 pt-8 border-t border-slate-200">
+      <p>
+        <a href="index.html" class="text-blue-700 hover:underline font-medium">Live demo</a> ·
+        <a href="design.html" class="text-blue-700 hover:underline font-medium">Design &amp; flow</a> ·
+        <a href="/docs" class="text-blue-700 hover:underline font-medium">Index API docs</a> ·
+        <a href="https://arxiv.org/pdf/2507.14263" class="text-blue-700 hover:underline font-medium" target="_blank" rel="noopener">NANDA paper (PDF)</a>
+      </p>
+    </footer>
+  </main>
+</body>
+</html>
