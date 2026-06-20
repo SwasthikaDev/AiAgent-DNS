@@ -32,13 +32,20 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from nanda.crypto import verify_payload, verify_vc
+from nanda.crypto import (
+    did_key_to_pubkey_b64,
+    verify_payload,
+    verify_vc,
+    verify_vc_via_did,
+)
 
 
 INDEX_URL = os.environ.get("INDEX_URL", "http://localhost:8000")
 
 app = typer.Typer(add_completion=False, help="NANDA client — resolve and call agents.")
-console = Console()
+# emoji=False so technical strings like "did:key:..." aren't mangled into emoji
+# (rich would otherwise replace the ":key:" shortcode with 🔑).
+console = Console(emoji=False)
 
 
 def _step(n: int, total: int, msg: str) -> None:
@@ -203,6 +210,56 @@ def call(
     r = httpx.post(endpoint, json={"message": message}, timeout=10.0)
     r.raise_for_status()
     console.print(Panel(json.dumps(r.json(), indent=2), title="Agent response", border_style="cyan"))
+
+
+@app.command(name="verify-did")
+def verify_did(agent_name: str):
+    """Verify AgentFacts by resolving the agent's key from its own did:key.
+
+    The paper-faithful path: instead of trusting the public_key copy the index
+    hands out, the client recovers the agent's Ed25519 key from the VC's
+    verificationMethod (a did:key) and verifies against that.
+    """
+    _step(1, 4, f"Fetching index public key from {INDEX_URL}")
+    index_pub = _get_index_pubkey()
+    _ok("got index pubkey")
+
+    _step(2, 4, f"Resolving '{agent_name}' and verifying the AgentAddr")
+    addr = httpx.get(f"{INDEX_URL}/resolve/{agent_name}", timeout=5.0).json()
+    if not verify_payload(addr, index_pub):
+        _fail("AgentAddr signature INVALID")
+        raise typer.Exit(code=2)
+    _ok("AgentAddr signature VALID")
+
+    _step(3, 4, "Fetching AgentFacts and reading its verificationMethod (did:key)")
+    facts = httpx.get(addr["primary_facts_url"], timeout=5.0).json()
+    vm = facts.get("proof", {}).get("verificationMethod", "")
+    console.print(f"        verificationMethod: [cyan]{vm}[/cyan]")
+    try:
+        recovered = did_key_to_pubkey_b64(vm)
+    except ValueError as e:
+        _fail(f"could not resolve did:key ({e}). Re-run scripts/bootstrap.py?")
+        raise typer.Exit(code=2)
+    _ok(f"recovered agent pubkey from did:key: {recovered[:24]}…")
+    matches = recovered == addr.get("public_key")
+    console.print(
+        f"        matches AgentAddr.public_key: "
+        f"{'[green]yes[/green]' if matches else '[yellow]no[/yellow]'}"
+    )
+
+    _step(4, 4, "Verifying the VC using ONLY the DID-resolved key")
+    if not verify_vc_via_did(facts):
+        _fail("AgentFacts VC INVALID")
+        raise typer.Exit(code=2)
+    _ok("AgentFacts VC VALID — verified without trusting the index's key copy")
+    console.print()
+    console.print(Panel(
+        "[bold green]Paper-faithful key resolution.[/bold green]\n\n"
+        "The agent's verify key was decoded straight from its [bold]did:key[/bold]\n"
+        "identifier inside the credential. The index never had to be trusted to\n"
+        "hand out the right public key — the key travels with the agent's DID.",
+        border_style="green",
+    ))
 
 
 @app.command(name="demo-tamper")

@@ -7,11 +7,14 @@ Run: python -m pytest tests/ -q
 from nanda.crypto import (
     CRYPTOSUITE,
     canonicalize,
+    did_key_to_pubkey_b64,
     generate_keypair,
+    pubkey_to_did_key,
     sign_payload,
     sign_vc_payload,
     verify_payload,
     verify_vc,
+    verify_vc_via_did,
 )
 
 
@@ -79,3 +82,38 @@ def test_vc_wrong_key_rejected():
         issuer_private_key_b64=priv1,
     )
     assert verify_vc(vc, pub2) is False
+
+
+# --- did:key resolution tests ----------------------------------------------
+
+
+def test_did_key_roundtrip():
+    _, pub = generate_keypair()
+    did = pubkey_to_did_key(pub)
+    assert did.startswith("did:key:z")
+    # The key recovered from the identifier matches the original, byte-for-byte.
+    assert did_key_to_pubkey_b64(did) == pub
+
+
+def test_vc_verifies_via_did_with_no_external_key():
+    priv, pub = generate_keypair()
+    vc = sign_vc_payload(
+        credential_subject={"id": "nanda:abc", "label": "DID Agent"},
+        issuer_public_key_b64=pub,
+        issuer_private_key_b64=priv,
+    )
+    # The VC self-describes its issuer as a did:key...
+    assert vc["issuer"].startswith("did:key:z")
+    # ...so the client can verify it without being handed the public key.
+    assert verify_vc_via_did(vc) is True
+
+
+def test_vc_via_did_tamper_detected():
+    priv, pub = generate_keypair()
+    vc = sign_vc_payload(
+        credential_subject={"id": "x", "label": "ok"},
+        issuer_public_key_b64=pub,
+        issuer_private_key_b64=priv,
+    )
+    vc["credentialSubject"]["label"] = "tampered"
+    assert verify_vc_via_did(vc) is False
