@@ -48,10 +48,10 @@ def _b64d(data: str) -> bytes:
 
 def generate_keypair() -> tuple[str, str]:
     """Return (private_key_b64, public_key_b64)."""
-    sk = signing.SigningKey.generate() # generates the private key 
+    sk = signing.SigningKey.generate() # generates the private key
     # verify_key creates the public key
-    return _b64e(sk.encode()), _b64e(sk.verify_key.encode()) 
-    # The Ed25519 public (verify) key is derived from the private (signing) key. 
+    return _b64e(sk.encode()), _b64e(sk.verify_key.encode())
+    # The Ed25519 public (verify) key is derived from the private (signing) key.
     # Ed25519 generates both key pair and signature
 
 
