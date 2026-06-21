@@ -38,6 +38,13 @@
     .partial { @apply text-amber-700 font-semibold; }
     .no  { @apply text-red-700 font-semibold; }
     th, td { @apply align-top; }
+    .code {
+      @apply bg-slate-900 text-slate-100 rounded-md p-4 overflow-x-auto
+             text-[12.5px] leading-relaxed;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .cm { @apply text-slate-400; }
+    .kw { @apply text-sky-300; }
   </style>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -69,11 +76,49 @@
         What each file does, and exactly what runs on a request.
       </h2>
       <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
-        Four parts: a <strong>map of the repo</strong>, a <strong>step-by-step trace</strong> of the functions
-        that fire when you resolve and call an agent, a <strong>function reference</strong>, and an honest
-        <strong>implemented-vs-paper</strong> table. The signing/verifying core is one small file
+        Six parts: a <strong>map of the repo</strong>, a <strong>FastAPI primer</strong> (for Django folks),
+        a <strong>step-by-step trace</strong> of the functions that fire when you resolve and call an agent,
+        a <strong>function reference</strong>, an honest <strong>implemented-vs-paper</strong> table, and the
+        <strong>CLI commands</strong>. The signing/verifying core is one small file
         (<span class="file">nanda/crypto.py</span>); everything else is plumbing around it.
       </p>
+    </section>
+
+    <!-- ============== SERVICES & PORTS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">At a glance</p>
+        <h3 class="sec-title">Six services, six ports</h3>
+        <p class="sec-desc">
+          Each service is its own FastAPI app on its own port. The ports are set in
+          <span class="file">docker-compose.yml</span> — each service's
+          <span class="mono">command: uvicorn … --port N</span> plus its <span class="mono">ports: "N:N"</span>
+          mapping — and the browser is pointed at them by <span class="file">frontend/config.js</span>.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Port</th><th class="py-2 pr-4">Service</th><th class="py-2">Role</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 mono">8000</td><td class="py-2 pr-4">index</td><td class="py-2 text-slate-700">Lean index — signs AgentAddr; also serves this UI at <span class="mono">/ui</span>.</td></tr>
+              <tr><td class="py-2 pr-4 mono">8001</td><td class="py-2 pr-4">facts-primary</td><td class="py-2 text-slate-700">Agent-owned facts host (PrimaryFactsURL).</td></tr>
+              <tr><td class="py-2 pr-4 mono">8002</td><td class="py-2 pr-4">facts-private</td><td class="py-2 text-slate-700">Third-party facts host (PrivateFactsURL — the privacy path).</td></tr>
+              <tr><td class="py-2 pr-4 mono">8010</td><td class="py-2 pr-4">agent-echo</td><td class="py-2 text-slate-700">Sample agent — echoes input.</td></tr>
+              <tr><td class="py-2 pr-4 mono">8011</td><td class="py-2 pr-4">agent-translate</td><td class="py-2 text-slate-700">Sample agent — mock translator (uppercases).</td></tr>
+              <tr><td class="py-2 pr-4 mono">8020</td><td class="py-2 pr-4">adaptive-resolver</td><td class="py-2 text-slate-700">§VI dispatcher — signed, TTL-scoped routing tokens.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-slate-500 mt-4 leading-relaxed">
+          Every service also exposes <span class="mono">/</span> for health and <span class="mono">/docs</span> for
+          interactive OpenAPI — e.g. <span class="mono">http://localhost:8001/docs</span>. It's the
+          <em>same image</em> (<span class="file">Dockerfile</span>) run with a different
+          <span class="mono">command:</span> and env per service.
+        </p>
+      </div>
     </section>
 
     <!-- ============== 1. REPO MAP ============== -->
@@ -125,14 +170,81 @@
       </div>
     </section>
 
-    <!-- ============== 2. CALL ROUTING TRACE ============== -->
+    <!-- ============== 2. FASTAPI PRIMER ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1">2 · Routing trace</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">2 · FastAPI primer</p>
+        <h3 class="sec-title">FastAPI, if you already know Django</h3>
+        <p class="sec-desc">
+          Every service here is a FastAPI app. Coming from Django, the one big shift is that a route's
+          URL, HTTP method, input validation, and output serialization all live <em>on the function</em>
+          (via a decorator + type hints) — there's no <span class="mono">urls.py</span>, no separate
+          serializer class, and the API docs generate themselves.
+        </p>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Django</th><th class="py-2 pr-4">FastAPI (in this repo)</th><th class="py-2">Note</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 mono">urls.py + view</td><td class="py-2 pr-4 mono">@app.get("/path")</td><td class="py-2 text-slate-700">Route + method declared right on the handler. No URLconf.</td></tr>
+              <tr><td class="py-2 pr-4 mono">&lt;path:agent_name&gt;</td><td class="py-2 pr-4 mono">{agent_name:path}</td><td class="py-2 text-slate-700">Path converter that lets slashes/colons through (our URNs).</td></tr>
+              <tr><td class="py-2 pr-4 mono">Form / DRF Serializer (in)</td><td class="py-2 pr-4 mono">Pydantic BaseModel</td><td class="py-2 text-slate-700">A typed model as a param → FastAPI parses + validates the JSON body. <span class="file">schemas.py</span>.</td></tr>
+              <tr><td class="py-2 pr-4 mono">DRF Serializer (out)</td><td class="py-2 pr-4 mono">response_model=…</td><td class="py-2 text-slate-700">Return a model/dict → auto-serialized to JSON in that shape.</td></tr>
+              <tr><td class="py-2 pr-4 mono">request.GET / request.POST</td><td class="py-2 pr-4 mono">function parameters</td><td class="py-2 text-slate-700">Inputs arrive as typed arguments, not off a request object.</td></tr>
+              <tr><td class="py-2 pr-4 mono">raise Http404</td><td class="py-2 pr-4 mono">raise HTTPException(404)</td><td class="py-2 text-slate-700">Same idea — raise to short-circuit with a status code.</td></tr>
+              <tr><td class="py-2 pr-4 mono">MIDDLEWARE setting</td><td class="py-2 pr-4 mono">app.add_middleware(…)</td><td class="py-2 text-slate-700">e.g. CORSMiddleware — same concept as Django middleware.</td></tr>
+              <tr><td class="py-2 pr-4 mono">ORM (models.py)</td><td class="py-2 pr-4 mono">— (raw sqlite3)</td><td class="py-2 text-slate-700">FastAPI ships no ORM; we use raw SQLite in <span class="file">db.py</span>.</td></tr>
+              <tr><td class="py-2 pr-4 mono">DRF browsable API</td><td class="py-2 pr-4 mono">/docs (auto)</td><td class="py-2 text-slate-700">Swagger UI generated from the type hints — free, per service.</td></tr>
+              <tr><td class="py-2 pr-4 mono">gunicorn + WSGI</td><td class="py-2 pr-4 mono">uvicorn + ASGI</td><td class="py-2 text-slate-700">ASGI server; FastAPI is async-first. It's the <span class="mono">command:</span> line in compose.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">The same idea in code — <span class="file">index_service/main.py</span></p>
+        <pre class="code"><span class="kw">app</span> = FastAPI()                          <span class="cm"># the ASGI app (≈ a Django project)</span>
+
+<span class="cm"># Request body schema — like a DRF serializer / Django form (schemas.py)</span>
+<span class="kw">class</span> RegisterRequest(BaseModel):
+    agent_name: str
+    public_key: str
+    ttl: int = 3600                        <span class="cm"># typed + default, validated for free</span>
+
+<span class="cm"># Route + method + output shape, all on the function. No urls.py.</span>
+<span class="kw">@app.post</span>("/register", response_model=AgentAddr)
+<span class="kw">def</span> register(req: RegisterRequest):        <span class="cm"># body parsed + validated into `req`</span>
+    ...
+    <span class="kw">return</span> signed_addr                       <span class="cm"># auto-serialized to JSON as an AgentAddr</span>
+
+<span class="cm"># {agent_name:path} ≈ Django's &lt;path:…&gt; — lets the URN's colons through</span>
+<span class="kw">@app.get</span>("/resolve/{agent_name:path}", response_model=AgentAddr)
+<span class="kw">def</span> resolve(agent_name: str):
+    row = db.get_by_name(agent_name)
+    <span class="kw">if</span> row <span class="kw">is</span> None:
+        <span class="kw">raise</span> HTTPException(status_code=404, detail="no such agent")
+    <span class="kw">return</span> _row_to_agent_addr(row)           <span class="cm"># build + sign, then return</span></pre>
+
+        <p class="text-xs text-slate-500 mt-4 leading-relaxed">
+          The mental shift that pays off: in Django you reach <em>into</em> a request object and write
+          <em>out</em> through a serializer; in FastAPI the function <strong>signature is the contract</strong> —
+          typed inputs come in as arguments, the typed return goes out as JSON, and <span class="mono">/docs</span>
+          documents it automatically.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 3. CALL ROUTING TRACE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1">3 · Routing trace</p>
         <h3 class="sec-title">What runs when you call an agent</h3>
         <p class="sec-desc">
           Tracing <span class="mono">Resolve &amp; Call</span> on the <span class="mono">multiregion</span> agent with
-          adaptive routing on. Each step shows the HTTP hop, the service handler it lands in, and the function chain.
+          adaptive routing on (default routing = Auto, so the resolver round-robins; a pinned region is an
+          override). Each step shows the HTTP hop, the service handler it lands in, and the function chain.
           The same chain runs in the CLI (<span class="pill-fn pill">_resolve_chain</span>) — only the verifier
           library differs (browser TweetNaCl vs CLI PyNaCl).
         </p>
@@ -175,7 +287,7 @@
           <div class="step">
             <div class="step-n">6</div>
             <div><span class="font-semibold">Dispatch via the Adaptive Resolver (§VI).</span><br/>
-              <span class="pill pill-post">POST</span> <span class="mono">:8020/dispatch</span> → <span class="file">adaptive_resolver.main</span> <span class="pill-fn pill">dispatch()</span> → <span class="pill-fn pill">_pick_endpoint()</span> (geo match) → crypto <span class="pill-fn pill">sign_payload()</span> signs a 60-second routing token.
+              <span class="pill pill-post">POST</span> <span class="mono">:8020/dispatch</span> → <span class="file">adaptive_resolver.main</span> <span class="pill-fn pill">dispatch()</span> → <span class="pill-fn pill">_pick_endpoint()</span> (resolver decides — round-robin by default; geo / capability are overrides) → crypto <span class="pill-fn pill">sign_payload()</span> signs a 60-second routing token.
             </div>
           </div>
           <div class="step">
@@ -203,7 +315,7 @@
     <!-- ============== 3. KEY FUNCTIONS ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-violet-700 mb-1">3 · Function reference</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-violet-700 mb-1">4 · Function reference</p>
         <h3 class="sec-title">The functions that matter</h3>
         <p class="sec-desc">The ones a reviewer will ask about, grouped by what they do.</p>
         <div class="overflow-x-auto">
@@ -231,7 +343,7 @@
     <!-- ============== 4. IMPLEMENTED vs PAPER ============== -->
     <section>
       <div class="card card-padded">
-        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">4 · Implemented vs. the paper</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-emerald-700 mb-1">5 · Implemented vs. the paper</p>
         <h3 class="sec-title">What's built, what's deferred</h3>
         <p class="sec-desc">
           An honest scorecard against <em>Beyond DNS</em>. <span class="yes">✔ built</span> ·
@@ -267,6 +379,55 @@
         </div>
         <p class="text-[11px] text-slate-500 mt-4 italic">
           The crypto is real and Level-1 works end-to-end; what's deferred is breadth and scale, not correctness.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 6. CLI COMMANDS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">6 · CLI commands</p>
+        <h3 class="sec-title">Driving it from the terminal</h3>
+        <p class="sec-desc">
+          The CLI (<span class="file">nanda/cli.py</span>, built with Typer) is the technical surface — it walks
+          the same chain as the web UI and prints every signature check. Run the stack and seed the agents first:
+        </p>
+        <pre class="code"><span class="cm"># one-time setup</span>
+docker compose up --build -d        <span class="cm"># start the 6-service stack</span>
+pip install -r requirements.txt     <span class="cm"># deps for the CLI</span>
+python scripts/bootstrap.py         <span class="cm"># register the 3 demo agents</span></pre>
+
+        <div class="overflow-x-auto mt-5">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Command</th><th class="py-2">What it does</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 mono">list</td><td class="py-2 text-slate-700">List every agent the index knows about.</td></tr>
+              <tr><td class="py-2 pr-4 mono">resolve &lt;name&gt;</td><td class="py-2 text-slate-700">Walk index → AgentAddr → AgentFacts, verifying every signature. <span class="mono">--private</span> uses the third-party host; <span class="mono">--show-facts</span> prints the full VC.</td></tr>
+              <tr><td class="py-2 pr-4 mono">call &lt;name&gt;</td><td class="py-2 text-slate-700">Resolve + verify, then POST a message to the endpoint. <span class="mono">-m/--message</span>, <span class="mono">--adaptive</span> (§VI resolver), <span class="mono">--region</span>.</td></tr>
+              <tr><td class="py-2 pr-4 mono">verify-did &lt;name&gt;</td><td class="py-2 text-slate-700">Verify AgentFacts by recovering the key from the VC's <span class="mono">did:key</span> — no index key copy trusted.</td></tr>
+              <tr><td class="py-2 pr-4 mono">demo-tamper &lt;name&gt;</td><td class="py-2 text-slate-700">Mutate a signed field and show the client rejecting it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <pre class="code mt-5">python -m nanda.cli list
+python -m nanda.cli resolve urn:agent:demo:echo
+python -m nanda.cli resolve urn:agent:demo:translate --private --show-facts
+python -m nanda.cli call urn:agent:demo:echo --message <span class="kw">"hello"</span>
+python -m nanda.cli call urn:agent:demo:multiregion --adaptive --region eu-west
+python -m nanda.cli verify-did urn:agent:demo:echo
+python -m nanda.cli demo-tamper urn:agent:demo:echo
+
+python -m nanda.cli --help          <span class="cm"># all commands</span>
+python -m nanda.cli call --help     <span class="cm"># flags for one command</span></pre>
+        <p class="text-xs text-slate-500 mt-4 leading-relaxed">
+          Each command is a <span class="pill-fn pill">@app.command()</span>-decorated function in
+          <span class="file">cli.py</span>; the function name is the command, and its typed parameters become
+          the arguments and <span class="mono">--flags</span>. Same self-documenting style as the FastAPI services.
         </p>
       </div>
     </section>
