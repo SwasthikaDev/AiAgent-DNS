@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NANDA Index Explorer — Production &amp; System Design</title>
+  <meta name="description" content="What it takes to run the NANDA index architecture in production at trillion-agent scale: the system-design practices, grounded in the paper." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231d4ed8'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>N</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style type="text/tailwindcss">
+    .card { @apply bg-white rounded-lg border border-slate-200 shadow-sm; }
+    .card-padded { @apply p-5 md:p-7; }
+    .sec-title { @apply text-lg font-semibold text-slate-900; }
+    .sec-desc  { @apply text-sm text-slate-600 mt-1 mb-5 max-w-3xl leading-relaxed; }
+    .btn-secondary {
+      @apply inline-flex items-center gap-2 bg-white text-slate-800 border border-slate-300
+             rounded-md px-3 py-1.5 text-sm font-semibold
+             hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400;
+    }
+    .mono { @apply font-mono text-[13px]; }
+    .file { @apply font-mono text-[13px] text-blue-800; }
+    .pill { @apply inline-block px-1.5 py-px rounded text-[11px] font-bold align-middle; }
+    .pill-sec { @apply bg-rose-100 text-rose-800; }
+    .pill-scale { @apply bg-blue-100 text-blue-800; }
+    .pill-ops { @apply bg-emerald-100 text-emerald-800; }
+    .eyebrow { @apply text-xs font-semibold uppercase tracking-widest mb-1; }
+    th, td { @apply align-top; }
+    .lead { @apply text-sm text-slate-700 leading-relaxed; }
+    .why { @apply text-xs text-slate-500 mt-1; }
+    li { @apply mb-1.5; }
+  </style>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- ============== HEADER ============== -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-[1100px] mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-md bg-blue-700 flex items-center justify-center font-bold text-white text-lg">N</div>
+        <div>
+          <h1 class="text-lg font-semibold text-slate-900">Production &amp; System Design</h1>
+          <p class="text-xs text-slate-500">NANDA Index Explorer · running it for real</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <a href="code.html" class="btn-secondary">How the code works</a>
+        <a href="index.html" class="btn-secondary">← Live demo</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-[1100px] mx-auto px-4 md:px-8 py-8 md:py-12 space-y-10">
+
+    <!-- ============== INTRO ============== -->
+    <section>
+      <p class="eyebrow text-slate-500">If this were real</p>
+      <h2 class="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight max-w-3xl">
+        From a one-laptop demo to trillion-agent infrastructure.
+      </h2>
+      <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
+        This prototype proves the <em>concepts</em> end-to-end. Running them as real internet infrastructure —
+        the paper's target of billions-to-trillions of agents, <strong>&lt;1&nbsp;s global resolution</strong>, and
+        <strong>sub-second revocation</strong> — is a different engineering problem. Below are the system-design
+        practices I'd apply, grounded in the paper, and an honest map of what each MVP shortcut becomes in production.
+        Legend: <span class="pill pill-scale">scale</span> <span class="pill pill-sec">security</span>
+        <span class="pill pill-ops">ops</span>.
+      </p>
+    </section>
+
+    <!-- ============== TARGETS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-slate-500">The bar the paper sets</p>
+        <h3 class="sec-title">Quantitative targets to design against</h3>
+        <p class="sec-desc">Every practice below exists to hit one of these numbers from <em>Beyond DNS</em>.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Target</th><th class="py-2 pr-4">Paper §</th><th class="py-2">Why it drives the design</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">&lt;1 s global resolution</td><td class="py-2 pr-4 mono">I, III</td><td class="py-2 text-slate-700">Forces edge caching + geo-distributed reads; resolution can't hit one origin.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">~10⁴× fewer writes than DNS</td><td class="py-2 pr-4 mono">II.A</td><td class="py-2 text-slate-700">Keep the index lean (≤120 B records); push volatile state to AgentFacts.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">10k updates/sec per shard</td><td class="py-2 pr-4 mono">II.D</td><td class="py-2 text-slate-700">Horizontal sharding + decentralized, index-free metadata publishing.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Sub-second revocation &amp; key rotation</td><td class="py-2 pr-4 mono">Abstract, VII.D</td><td class="py-2 text-slate-700">Short-lived VCs (&lt;5 min) + a fast-propagating VC-Status list.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Privacy / split-horizon</td><td class="py-2 pr-4 mono">II, VII.C</td><td class="py-2 text-slate-700">Dual-path resolution; hide requester identity and access patterns.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== THE -ILITIES ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-slate-500">Foundations</p>
+        <h3 class="sec-title">Designing for the four "-ilities"</h3>
+        <p class="sec-desc">
+          The non-functional requirements that decide whether infrastructure survives contact with reality.
+          Here's how each one shapes a NANDA build.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Property</th><th class="py-2 pr-4">What it means here</th><th class="py-2">The levers</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-blue-700">Scalability</td>
+                <td class="py-2.5 pr-4 text-slate-600">Handle billions→trillions of agents without re-architecting.</td>
+                <td class="py-2.5 text-slate-700"><strong>Horizontal</strong> sharding of the lean index (hash by <code>agent_id</code>); stateless services that autoscale; decentralized, index-free facts hosting; read-scale via edge caching + geo-replicas. Lean ≤120 B records keep per-agent cost near-zero.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-emerald-700">Maintainability</td>
+                <td class="py-2.5 pr-4 text-slate-600">A small team can evolve it safely for years.</td>
+                <td class="py-2.5 text-slate-700">Small <strong>single-concern services</strong> (one image, different config); a <strong>versioned, forward-compatible schema</strong> (JSON-LD <code>@context</code>); a published <strong>contract-test suite</strong> as the spec; full observability so changes are measurable.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-blue-700">Efficiency</td>
+                <td class="py-2.5 pr-4 text-slate-600">Minimum work per resolution; cheap at scale.</td>
+                <td class="py-2.5 text-slate-700"><strong>~10⁴× fewer writes</strong> than DNS (lean records); <strong>verify-once-cache-everywhere</strong> (signed objects are CDN-cacheable); Ed25519 is small &amp; fast (32 B keys, 64 B sigs); JCS canonicalisation means a signature made once verifies anywhere with no re-signing; TTLs tuned to volatility.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-rose-700">Reliability</td>
+                <td class="py-2.5 pr-4 text-slate-600">Stays up and correct under failure.</td>
+                <td class="py-2.5 text-slate-700">Multi-region redundancy, <strong>no single point of failure</strong> (federated indexes), resolver <strong>fallback rules</strong>, idempotent writes, retries/backoff, circuit breakers, SLAs + on-call.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-4 italic">
+          These four trade against each other — e.g. stronger consistency (a reliability/correctness lever) costs
+          latency (efficiency). The next two sections are about managing exactly those trade-offs.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== DATA / DBMS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Data layer · storing, moving, transforming <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">Polyglot persistence — the right store for each job</h3>
+        <p class="sec-desc">
+          There is no single database. Different parts of NANDA have completely different access patterns, so each
+          gets the store that fits — the classic <strong>polyglot persistence</strong> approach.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">Storing — what lives where</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Data</th><th class="py-2 pr-4">Store type</th><th class="py-2">Why</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Lean index (AgentAddr pointers)</td><td class="py-2 pr-4 text-slate-600">Distributed <strong>key-value</strong> store (Cassandra / DynamoDB / etcd)</td><td class="py-2 text-slate-700">Point lookups by <code>agent_id</code>, huge write throughput, horizontal sharding. No joins or cross-agent transactions → a relational DB is the wrong tool.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">AgentFacts (VC documents)</td><td class="py-2 pr-4 text-slate-600"><strong>Object / document / content-addressed</strong> store (S3 / CDN / IPFS)</td><td class="py-2 text-slate-700">Large-ish signed blobs, read-heavy, agent-self-published, cacheable at the edge.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Revocation status</td><td class="py-2 pr-4 text-slate-600"><strong>Fast replicated cache</strong> (Redis) / VC-Status list</td><td class="py-2 text-slate-700">Must answer "is this still valid?" in sub-second, globally.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Telemetry &amp; audit log</td><td class="py-2 pr-4 text-slate-600"><strong>Append-only log / time-series</strong> (Kafka / ClickHouse / immutable ledger)</td><td class="py-2 text-slate-700">High-volume, write-once, ordered, queried for trust scores and compliance.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">Moving — getting data where it's needed</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Replication</strong> across regions (leader-follower or multi-leader) so reads are served locally — the &lt;1 s target is mostly a data-locality problem.</li>
+          <li><strong>Event streaming + Change Data Capture</strong> (Kafka): registrations, key rotations, and <strong>revocations propagate</strong> as events to every edge cache and replica.</li>
+          <li><strong>CRDT-based async updates</strong> (the paper's update protocol): conflict-free metadata revision across replicas without coordination — agents publish independently.</li>
+          <li><strong>Anti-entropy / gossip</strong> to reconcile replicas; accept <strong>eventual consistency</strong> bounded by TTL.</li>
+        </ul>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">Transforming — turning raw data into useful data</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Canonicalise → sign</strong>: every object is JCS-canonicalised (RFC 8785) before an Ed25519 signature — the core transform that makes records verifiable and cache-safe.</li>
+          <li><strong>Row → signed AgentAddr</strong>: the index reads a tiny DB row and stamps + signs it on the fly (<code>_row_to_agent_addr</code>) — a read-time transform, so it never stores a stale signature.</li>
+          <li><strong>Telemetry → Trust-Reputation Scores</strong>: stream-process raw metrics into reputation over time (§VIII.B, §X).</li>
+          <li><strong>Facts → discovery index</strong>: extract searchable metadata from AgentFacts for reputation graphs / directories (§XI.B).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== CAP ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">Consistency · the CAP theorem <span class="pill pill-sec">security</span></p>
+        <h3 class="sec-title">Pick your trade-off — and pick it per subsystem</h3>
+        <p class="sec-desc">
+          CAP says a distributed system can guarantee at most two of <strong>Consistency</strong>,
+          <strong>Availability</strong>, and <strong>Partition-tolerance</strong>. On a global network, partitions
+          <em>will</em> happen, so P is non-negotiable — the real choice is <strong>C vs A when the network splits</strong>.
+          NANDA doesn't pick once; each layer picks what fits.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Layer</th><th class="py-2 pr-4">Choice</th><th class="py-2">Reasoning</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2.5 pr-4 font-medium">Resolution (index reads)</td><td class="py-2.5 pr-4"><span class="font-semibold text-blue-700">AP</span> — available + eventually consistent</td><td class="py-2.5 text-slate-700">Better to return a <em>signed, slightly-stale-within-TTL</em> AgentAddr than to fail a lookup during a partition. Staleness is <strong>bounded</strong> (TTL) and <strong>detectable</strong> (signed), so it's safe. Resolution must never go down globally.</td></tr>
+              <tr><td class="py-2.5 pr-4 font-medium">Revocation / security</td><td class="py-2.5 pr-4"><span class="font-semibold text-rose-700">leans CP</span> — wants strong consistency</td><td class="py-2.5 text-slate-700">You must <em>not</em> serve a revoked credential. This is the tension: it pulls toward consistency. Reconciled by <strong>short TTLs (&lt;5 min VCs)</strong> + a fast revocation list — you accept a small, tunable window of inconsistency as the safety/availability knob.</td></tr>
+              <tr><td class="py-2.5 pr-4 font-medium">Audit log</td><td class="py-2.5 pr-4"><span class="font-semibold text-rose-700">CP</span> — durable + ordered</td><td class="py-2.5 text-slate-700">Compliance and liability need a correct, append-only, ordered record — favour consistency/durability over availability for writes.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-4">
+          <strong>The key insight:</strong> NANDA can choose AP for resolution <em>because</em> its records are
+          <strong>signed</strong> (a stale answer can't be a forged answer) and <strong>TTL-bounded</strong>
+          (staleness is capped). Cryptography is what makes eventual consistency safe here — that's the whole reason
+          the paper signs everything and scopes it with TTLs.
+        </p>
+        <p class="why">
+          Going deeper (<strong>PACELC</strong>): even with <em>no</em> partition, there's a latency-vs-consistency
+          trade-off. NANDA chooses <strong>Latency</strong> for resolution (cache + replicas, eventual consistency)
+          to hit the &lt;1 s target — i.e. it's a <strong>PA/EL</strong> system: Available under partition, Latency-first otherwise.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== SLO / SLA ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-emerald-700">Reliability targets · SLI → SLO → SLA <span class="pill pill-ops">ops</span></p>
+        <h3 class="sec-title">Promise reliability in numbers, then defend it</h3>
+        <p class="sec-desc">
+          You can't run trusted infrastructure on "it feels fast." Reliability is defined as measured numbers and a
+          budget for failure. Three terms, often muddled:
+        </p>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>SLI</strong> (Indicator) — a <em>measured</em> metric. e.g. "% of resolves that return a valid signed AgentAddr in &lt;1 s."</li>
+          <li><strong>SLO</strong> (Objective) — the <em>internal target</em> for an SLI. e.g. "99.95% of resolves succeed." This is what the team designs and alerts against.</li>
+          <li><strong>SLA</strong> (Agreement) — the <em>external, contractual</em> promise to customers, with consequences (credits) if breached. Deliberately set <em>looser</em> than the SLO, so you have a buffer before you owe anyone.</li>
+        </ul>
+        <p class="lead mt-3">
+          <strong>Error budget = 100% − SLO.</strong> A 99.95% SLO means a ~22-minutes-a-month budget of allowed
+          failure. You <em>spend</em> it on releases and risk; when it's exhausted, you freeze features and fix
+          reliability. It's the mechanism that turns "move fast" vs "stay up" from an argument into a number.
+        </p>
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">What to measure (SLI)</th><th class="py-2 pr-4">Example SLO</th><th class="py-2">Tied to paper target</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Resolution success rate</td><td class="py-2 pr-4 mono">99.95%</td><td class="py-2 text-slate-700">Discovery must work — the index is the anchor.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Resolution latency (p99)</td><td class="py-2 pr-4 mono">&lt; 1 s</td><td class="py-2 text-slate-700">The paper's &lt;1 s global-resolution target.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Revocation propagation</td><td class="py-2 pr-4 mono">&lt; 1 s global</td><td class="py-2 text-slate-700">Sub-second revocation (§VII.D).</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Index throughput</td><td class="py-2 pr-4 mono">10k updates/s/shard</td><td class="py-2 text-slate-700">§II.D scalability target.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Signature-verify success</td><td class="py-2 pr-4 mono">≈ 100%</td><td class="py-2 text-slate-700">A failed verify is a security event, not noise.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-4 italic">
+          SLOs drive the alerts and the error budget; the SLA is the subset you're willing to put in a contract.
+          Measure SLIs with the OpenTelemetry pipeline from section 6.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== BACKUP / FAILURE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-emerald-700">Backup, failure &amp; disaster recovery <span class="pill pill-ops">ops</span></p>
+        <h3 class="sec-title">Assume every component fails — design for it</h3>
+        <p class="sec-desc">
+          Two questions drive disaster recovery: <strong>RPO</strong> (Recovery Point Objective — how much data can
+          we afford to lose?) and <strong>RTO</strong> (Recovery Time Objective — how fast must we be back?). They're
+          different per layer.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">Backups — per store</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Data</th><th class="py-2 pr-4">Backup strategy</th><th class="py-2">RPO / RTO</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Lean index (KV)</td><td class="py-2 pr-4 text-slate-600">Cross-region replicas + periodic snapshots + point-in-time recovery</td><td class="py-2 text-slate-700">RPO≈0, RTO low — it's the anchor; losing it stops all resolution.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Signing keys</td><td class="py-2 pr-4 text-slate-600">KMS/HSM with managed durability + recovery; publish key history</td><td class="py-2 text-slate-700">Never lose; never expose. Old objects must still verify after rotation.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">AgentFacts</td><td class="py-2 pr-4 text-slate-600">Object versioning / content-addressed (IPFS); agents can re-publish</td><td class="py-2 text-slate-700">Self-healing — the agent owns the source of truth, so loss is recoverable.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Audit log</td><td class="py-2 pr-4 text-slate-600">Append-only, immutable, replicated</td><td class="py-2 text-slate-700">RPO≈0 — compliance can't tolerate gaps.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">Failure modes &amp; response</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Node failure</strong> → replicas take over (health checks + load balancer); no data loss.</li>
+          <li><strong>Region failure</strong> → multi-region failover + anycast routes clients to a healthy region.</li>
+          <li><strong>Data corruption / tampering</strong> → <em>signed records make it self-detecting</em> (verify fails); restore from backup.</li>
+          <li><strong>Key compromise</strong> → rotate + revoke; <strong>blast radius is isolated</strong> by the three independent keypairs (index / agent / resolver), so one compromise doesn't sink the system.</li>
+          <li><strong>Adaptive resolver offline</strong> → fallback rules (static endpoint, retry in another region) — the call still completes (§VI.D).</li>
+          <li><strong>Whole-index outage</strong> → because AgentAddrs are <strong>signed and cacheable</strong>, clients keep resolving from their caches within TTL. The system <strong>degrades gracefully</strong> instead of going dark.</li>
+        </ul>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">Make DR real</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Test restores regularly</strong> — an untested backup is a hope, not a backup.</li>
+          <li><strong>Chaos engineering / game days</strong>: kill a region in staging and watch failover + the error budget.</li>
+          <li><strong>Runbooks</strong> for each failure mode so on-call isn't improvising at 3 a.m.</li>
+        </ul>
+        <p class="lead mt-3">
+          <strong>The architectural win:</strong> signed + TTL-bounded + cacheable + decentralized-facts means NANDA is
+          <em>inherently</em> resilient — much of the demo's design (sign everything, cache freely, agents own their facts)
+          is exactly what makes graceful degradation possible. The crypto isn't just security; it's availability.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 1. SCALE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">1 · Scale &amp; performance <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">Keep the index lean; scale reads at the edge</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Sharded, replicated KV store</strong> instead of SQLite. Partition by a hash of <code>agent_id</code> (consistent hashing); the index is a key→tiny-record lookup, which shards trivially. Target the paper's 10k updates/sec/shard (§II.D).</li>
+          <li><strong>Stateless services that scale horizontally.</strong> Index resolvers, facts hosts, and adaptive resolvers hold no per-request state, so they sit behind a load balancer and autoscale on request volume (§VIII.B "load-adaptive resolvers").</li>
+          <li><strong>Keep records ≤120 B</strong> (§II.A). Store credential <em>hashes/pointers</em>, not full keys or metadata — that's what gives ~10⁴× fewer writes than DNS and keeps shards cheap.</li>
+          <li><strong>Anycast + geo-distributed read replicas</strong> so a lookup is answered near the client (the &lt;1 s target is a latency problem, not just throughput).</li>
+          <li><strong>Separate the read and write paths.</strong> Resolution is overwhelmingly read; registration/rotation is the rare write. Optimise them independently.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== THROUGHPUT & LATENCY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Performance · throughput vs latency <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">Two different numbers, optimised two different ways</h3>
+        <p class="sec-desc">
+          Easy to confuse, but orthogonal: <strong>latency</strong> is how long <em>one</em> request takes;
+          <strong>throughput</strong> is how <em>many</em> requests you sustain per second. A system can have huge
+          throughput and terrible tail latency, or the reverse — you design for each differently.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Metric</th><th class="py-2 pr-4">Means</th><th class="py-2 pr-4">NANDA target</th><th class="py-2">How you get it</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-blue-700">Latency</td>
+                <td class="py-2.5 pr-4 text-slate-600">time for one resolution</td>
+                <td class="py-2.5 pr-4 mono">&lt; 1 s global (p99)</td>
+                <td class="py-2.5 text-slate-700">Edge caching + anycast/geo-replicas (answer near the client); <strong>client-side verification</strong> (no server round-trip); signed AgentAddr is cacheable, so the index isn't on the hot path; minimise hops.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-blue-700">Throughput</td>
+                <td class="py-2.5 pr-4 text-slate-600">ops/sec sustained</td>
+                <td class="py-2.5 pr-4 mono">10k updates/s/shard;<br/>reads ~unbounded via cache</td>
+                <td class="py-2.5 text-slate-700">Horizontal <strong>sharding</strong> (adds write capacity linearly); <strong>stateless autoscaling</strong>; reads served from cache (never hit origin); async I/O + connection pooling.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="lead mt-4"><strong>Optimise the tail, not the average.</strong> A p50 of 40 ms is meaningless if p99 is 4 s — one cold cache or far-region hop blows the &lt;1 s budget, and the tail is what users actually feel. SLOs are set on p99 for this reason.</p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Where the &lt;1 s budget goes (one resolution)</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Index lookup</strong> → ms-scale, usually from an edge cache or nearby replica.</li>
+          <li><strong>Fetch AgentFacts</strong> → ms-scale, CDN-cached signed VC.</li>
+          <li><strong>Verify signatures</strong> → microseconds, Ed25519, <em>client-side</em> — effectively free and doesn't load any server.</li>
+          <li><strong>Optional adaptive dispatch</strong> → ms-scale, stateless edge resolver.</li>
+        </ul>
+
+        <p class="lead mt-4">
+          <strong>They're coupled under load (Little's Law: <span class="mono">concurrency = throughput × latency</span>).</strong>
+          If latency spikes, in-flight requests pile up and throughput collapses. That's why <strong>caching is the
+          highest-leverage lever</strong> — it cuts <em>both</em>: a cache hit is low-latency <em>and</em> removes load
+          from the origin, raising throughput at the same time.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 2. CACHING ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">2 · Caching &amp; CDN <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">The highest-leverage lever — cache aggressively at the edge</h3>
+        <p class="sec-desc">
+          Caching cuts <em>latency</em> and offloads the <em>origin</em> (raising throughput) at the same time — no
+          other lever does both. DNS proves the model (it's essentially one giant distributed cache), and NANDA
+          inherits it with a twist: because every object is <strong>signed</strong>, it's safe to cache even on
+          edges you don't fully trust.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">The cache layers — closest to the user wins</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Layer</th><th class="py-2 pr-4">Caches</th><th class="py-2">Lifetime</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Client (agent / browser)</td><td class="py-2 pr-4 text-slate-600">AgentAddr it already resolved</td><td class="py-2 text-slate-700">AgentAddr TTL (≈1 h)</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">CDN / edge PoP</td><td class="py-2 pr-4 text-slate-600">signed AgentAddr + AgentFacts VC, near the user</td><td class="py-2 text-slate-700">per-object TTL</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Regional replica</td><td class="py-2 pr-4 text-slate-600">the index shard's data, in-region</td><td class="py-2 text-slate-700">replicated</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Origin (index shard / facts host)</td><td class="py-2 pr-4 text-slate-600">source of truth</td><td class="py-2 text-slate-700">authoritative</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-3">A request is answered by the <strong>closest layer with a fresh copy</strong>; most never reach the origin — which is exactly how DNS serves billions of lookups cheaply.</p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">What a CDN buys you</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Latency</strong> — content served from a PoP geographically near the user (the &lt;1 s lever).</li>
+          <li><strong>Throughput</strong> — origin offload: a 95% cache-hit ratio means the origin sees ~1/20th the traffic.</li>
+          <li><strong>Availability</strong> — the edge keeps serving cached (signed, within-TTL) objects <em>even if the origin is down</em> → graceful degradation.</li>
+          <li><strong>DDoS absorption</strong> — the CDN's capacity soaks up floods before they reach your origin (the lesson from the 2016 Dyn outage).</li>
+        </ul>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Why this is safe — the NANDA twist</p>
+        <p class="lead">
+          A CDN edge is infrastructure you don't fully control. Normally you'd worry it might tamper with cached
+          content. But every AgentAddr and AgentFacts VC is <strong>Ed25519-signed and verified client-side</strong>, so
+          a malicious or buggy edge <em>cannot forge a response</em>. That's what lets NANDA push signed objects to any
+          edge — even third-party CDNs or IPFS — with no trust problem. (Routing tokens have a 60 s TTL, usually too
+          short to bother caching.) Signed objects can even be <strong>redistributed peer-to-peer</strong> by clients
+          within their TTL — the paper's "2N handshake," where the index is touched once.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Cache invalidation — the genuinely hard part</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>TTL expiry</strong> — the default; automatically bounds staleness. Tune per volatility (healthcare vs demo, §V.E).</li>
+          <li><strong>Revocation list</strong> — the "kill it <em>now</em>" override when TTL is too slow; a VC-Status list gives sub-second invalidation (§VII.D).</li>
+          <li><strong>Explicit purge</strong> — push a purge to the CDN for an urgent change; but lean on short TTLs so you rarely need it.</li>
+        </ul>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Operate it well</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Cache-hit ratio is a top SLI</strong> — it drives both latency and origin cost directly.</li>
+          <li><strong>Guard against cache stampede</strong> (thundering herd): when a hot key expires, many clients miss at once and hammer the origin. Mitigate with request coalescing / <code>stale-while-revalidate</code>.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== PROXY SERVERS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Proxy servers · forward &amp; reverse <span class="pill pill-scale">scale</span> <span class="pill pill-sec">security</span></p>
+        <h3 class="sec-title">Two kinds of middleman — and NANDA uses both</h3>
+        <p class="sec-desc">
+          A proxy is a server that sits between two parties and forwards traffic on their behalf. <em>Which side it
+          hides</em> determines its type — and the NANDA architecture leans on both, one for privacy and one for routing.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Type</th><th class="py-2 pr-4">Sits in front of</th><th class="py-2 pr-4">Hides</th><th class="py-2">Its NANDA role</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-rose-700">Forward proxy</td>
+                <td class="py-2.5 pr-4 text-slate-600">the client</td>
+                <td class="py-2.5 pr-4 text-slate-600">the client's identity</td>
+                <td class="py-2.5 text-slate-700">The <strong>privacy path</strong>: a neutral relay / Tor / mix-net node fetches the <code>PrivateFactsURL</code> so the agent's host never sees the requester's IP — "requester anonymity" (§VII.C).</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-semibold text-blue-700">Reverse proxy</td>
+                <td class="py-2.5 pr-4 text-slate-600">the servers</td>
+                <td class="py-2.5 pr-4 text-slate-600">the backend topology</td>
+                <td class="py-2.5 text-slate-700">The <strong>adaptive resolver</strong> (the paper names <strong>Envoy / NGINX</strong>, §VI.E), the API gateway in front of every service, and the CDN edge — all reverse proxies.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Forward proxy → the privacy path</p>
+        <p class="lead">
+          When a client resolves via <code>PrivateFactsURL</code>, it fetches the agent's metadata <em>through</em> a
+          neutral forward proxy. The agent's domain is never contacted, and only the proxy sees the request — so the
+          requester stays anonymous and access patterns aren't leaked to the agent or a passive observer. Chaining
+          relays (Tor / mix-net) further defeats traffic-analysis correlation. This is exactly the "requester
+          anonymity + access decoupling" of §VII.C.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Reverse proxy → fronting the services</p>
+        <p class="lead">
+          Every service should sit behind a reverse proxy / API gateway that handles <strong>TLS termination,
+          load balancing</strong> across replicas, <strong>rate-limiting</strong> (the <code>/register</code>
+          protection), request routing, and <strong>DDoS shielding</strong> — the paper points to Envoy/NGINX for the
+          adaptive resolver, and a <strong>CDN is just a globally-distributed reverse-proxy cache</strong> (the caching
+          section above). It's also the natural place to enforce <strong>mTLS between services</strong>, centralise
+          auth, and emit per-request telemetry, since every request flows through it — one clean control point.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== 3. SECURITY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">3 · Trust, keys &amp; security <span class="pill pill-sec">security</span></p>
+        <h3 class="sec-title">Real key management and revocation</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Private keys in a KMS/HSM</strong>, never plaintext files. The MVP stores keys in <code>data/*.json</code> — in production those move to a managed secrets store with access control and rotation.</li>
+          <li><strong>Sub-second key rotation &amp; revocation</strong> (Abstract, §VII.D): short-lived VCs (&lt;5 min) + a <strong>VC-Status revocation list</strong> clients check during verification. Rotate the index/resolver signing keys on a schedule; publish key history so cached objects still verify.</li>
+          <li><strong>DID-based identity</strong> (§IV): resolve the agent's key from its <code>did:key</code>/<code>did:web</code> (this MVP does <code>did:key</code>), so the index stores a hash, not a copy of the key — rotation doesn't require an index write.</li>
+          <li><strong>Authn + rate-limiting on writes.</strong> <code>/register</code> must be authenticated and throttled to stop spam/abuse and Sybil registration (§II.G).</li>
+          <li><strong>Federated trust zones &amp; cross-signing</strong> (§VII.B): credential authorities govern their own zones; clients set trust policy (whitelisted issuers, threshold verification, Trust-Reputation Scores). No hardcoded trust anchors.</li>
+          <li><strong>Defence in depth:</strong> mTLS between services, signed everything, append-only audit logs for tamper-evidence (§II governance).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== 4. PRIVACY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">4 · Privacy &amp; split-horizon <span class="pill pill-sec">security</span></p>
+        <h3 class="sec-title">Hide who is asking, not just what is signed</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Real privacy-path hosting</strong> (§VII.C): the MVP's "private" facts host is just a second HTTP service. In production it's <strong>IPFS / a neutral gateway / Tor-style relays</strong> so the agent's domain is never contacted and the requester stays anonymous.</li>
+          <li><strong>Dual-path resolution</strong> via <code>PrimaryFactsURL</code> + <code>PrivateFactsURL</code>, with cacheable or mix-net-broadcast requests to defeat traffic-analysis correlation (§E).</li>
+          <li><strong>Split-horizon</strong>: return different answers depending on who/where is asking, for enterprise governance — without leaking the query.</li>
+          <li><strong>Data minimisation / least-disclosure</strong>; longer term, ZKP-based capability proofs (§X) so an agent proves compliance without revealing full certificate chains.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== 5. RELIABILITY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-emerald-700">5 · Reliability &amp; resilience <span class="pill pill-ops">ops</span></p>
+        <h3 class="sec-title">Graceful degradation, no single point of failure</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Multi-region, redundant deployment</strong> with health checks and automatic failover. The index is a globally distributed federated system (§IV.C), not one box.</li>
+          <li><strong>Fallback rules for the adaptive resolver</strong> (§VI.D): if the resolver is unreachable, fall back to a static endpoint, retry with backoff in another region, or escalate to credential-based access — never hard-fail the call.</li>
+          <li><strong>Idempotent writes, retries with backoff, circuit breakers</strong> between services so one slow dependency doesn't cascade.</li>
+          <li><strong>SLAs + on-call.</strong> Once external builders depend on a public testnet, reliability is the product — define SLOs (resolve success rate, p95 latency) and a real rotation.</li>
+          <li><strong>DDoS resilience</strong>: rotating/shuffle-sharded endpoints and signed routing tokens so infrastructure can be obfuscated and shuffled under attack (§VI).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== 6. OBSERVABILITY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-emerald-700">6 · Observability &amp; audit <span class="pill pill-ops">ops</span></p>
+        <h3 class="sec-title">You can't operate what you can't see</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>OpenTelemetry across every service</strong> (§VIII.B). A single resolution spans index → facts host → resolver → agent; <strong>distributed tracing</strong> ties those hops into one trace so you can find where the &lt;1 s budget is spent.</li>
+          <li><strong>The metrics that matter:</strong> resolves/sec, p50/p95/p99 latency, error rate, cache-hit ratio, revocation propagation time, signature-verify failures.</li>
+          <li><strong>Append-only, tamper-evident audit logs</strong> for governance and liability — proving compliance and assigning blame when an agent misbehaves across borders (§II).</li>
+          <li><strong>Behaviour-based trust scoring</strong> fed by telemetry (§VIII.B, §X) to compute reputation over time.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== 7. HOSTING ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">7 · Hosting &amp; storage <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">Decentralised, index-free metadata</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>AgentFacts on object storage / CDN / IPFS</strong>, not local files. Agents sign and self-publish their VCs to self-selected hosts and just point the lean index at the URL — no index write to update metadata (§II.D).</li>
+          <li><strong>Flexible hosting model</strong> (§XI.A): self-hosting (provenance, but reveals access patterns), third-party hosting (privacy, but host-trust dependency), or neutral public infra. Support all three; let publishers choose by trust/latency/control.</li>
+          <li><strong>CRDT-based update protocol</strong> (Abstract) for conflict-free, asynchronous metadata revision across replicas.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== 8. FEDERATION ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">8 · Federation &amp; governance <span class="pill pill-sec">security</span></p>
+        <h3 class="sec-title">A quilt of registries, not one authority</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Cross-index federation</strong> (§IV.C): independent indexes operated by enterprises, clouds, or public bodies, linked with verifiable credentials and registry-to-registry bridges. "Quilt" only becomes real with federation.</li>
+          <li><strong>Diverse registration models</strong> (§IV.B, Table 1): NANDA-native, enterprise-routed, and Web3/DID-marketplace agents — with consistent metadata standards across boundaries.</li>
+          <li><strong>Standards alignment</strong> (§X): drive the AgentFacts schema through IETF/W3C, keep the trust primitive (signed VCs over canonical JSON) portable so it interoperates with A2A, MCP, NLWeb, ANS/ANP.</li>
+          <li><strong>Governance model</strong>: who decides what goes in the spec, revocation/dispute protocols, multi-jurisdictional policy — sketched as a steering committee with rotating representation.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== 9. DELIVERY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-emerald-700">9 · Delivery &amp; engineering practice <span class="pill pill-ops">ops</span></p>
+        <h3 class="sec-title">How the team ships it safely</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Kubernetes</strong> (not docker-compose) for real orchestration: autoscaling, rolling/<strong>blue-green deployments</strong> (the endpoint-agility the paper assumes, §II.C), self-healing.</li>
+          <li><strong>Infrastructure as code + CI/CD</strong>: every service tested, linted, and deployed through a pipeline; secrets via the KMS, never in the repo.</li>
+          <li><strong>A published contract-test suite</strong> any compliant index / facts host / client must pass — the reference implementation <em>is</em> the spec, so interop is enforced by tests, not prose.</li>
+          <li><strong>Independent security review</strong> of the reference implementation before anyone depends on it; threat-model the trust and revocation paths.</li>
+          <li><strong>Versioned, forward-compatible schema</strong>: JSON-LD <code>@context</code> lets AgentFacts evolve without breaking old clients (§I).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== MVP → PROD MAP ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-slate-500">The honest map</p>
+        <h3 class="sec-title">Every MVP shortcut → its production practice</h3>
+        <p class="sec-desc">What this prototype does today, and what it becomes for real. The shortcuts are deliberate — they keep the demo runnable while the concept is proven.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Concern</th><th class="py-2 pr-4">MVP today</th><th class="py-2">Production practice</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Index storage</td><td class="py-2 pr-4 text-slate-600">SQLite, one node</td><td class="py-2 text-slate-700">Sharded, replicated KV store; 10k updates/sec/shard.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Resolution latency</td><td class="py-2 pr-4 text-slate-600">localhost</td><td class="py-2 text-slate-700">CDN edge caching + anycast geo-replicas for &lt;1 s global.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Private keys</td><td class="py-2 pr-4 text-slate-600">plaintext <code>data/*.json</code></td><td class="py-2 text-slate-700">KMS/HSM with access control + rotation.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Revocation</td><td class="py-2 pr-4 text-slate-600">TTL expiry only</td><td class="py-2 text-slate-700">VC-Status list, sub-second propagation.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Agent key resolution</td><td class="py-2 pr-4 text-slate-600">did:key + key in AgentAddr</td><td class="py-2 text-slate-700">did:web/did:key resolution; index stores a hash only.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Privacy path</td><td class="py-2 pr-4 text-slate-600">2nd HTTP host</td><td class="py-2 text-slate-700">IPFS / Tor / mix-net for real requester anonymity.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Facts hosting</td><td class="py-2 pr-4 text-slate-600">local JSON files</td><td class="py-2 text-slate-700">Object storage / CDN / IPFS; agent self-publishes.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">/register</td><td class="py-2 pr-4 text-slate-600">open, no auth</td><td class="py-2 text-slate-700">Authn + rate-limiting + anti-Sybil.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Orchestration</td><td class="py-2 pr-4 text-slate-600">docker-compose</td><td class="py-2 text-slate-700">Kubernetes, multi-region, blue-green, autoscaling.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Observability</td><td class="py-2 pr-4 text-slate-600">console logs</td><td class="py-2 text-slate-700">OpenTelemetry tracing + metrics + audit logs.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">One index</td><td class="py-2 pr-4 text-slate-600">single instance</td><td class="py-2 text-slate-700">Federated, cross-signed quilt of registries.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-4 italic">
+          The crypto and the resolution flow are already production-shaped (Ed25519, JCS, W3C VC, signed routing tokens).
+          What changes for real scale is the storage, hosting, key management, observability, and federation around them.
+        </p>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-slate-500 pt-8 border-t border-slate-200">
+      <p>
+        <a href="index.html" class="text-blue-700 hover:underline font-medium">Live demo</a> ·
+        <a href="code.html" class="text-blue-700 hover:underline font-medium">How the code works</a> ·
+        <a href="design.html" class="text-blue-700 hover:underline font-medium">Design &amp; flow</a> ·
+        <a href="https://arxiv.org/pdf/2507.14263" class="text-blue-700 hover:underline font-medium" target="_blank" rel="noopener">NANDA paper (PDF)</a>
+      </p>
+    </footer>
+  </main>
+</body>
+</html>
