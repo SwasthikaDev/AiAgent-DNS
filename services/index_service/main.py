@@ -41,6 +41,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve the bind-mounted UI with no-store so edits show on a normal refresh
+# (no hard-reload needed). Cheap for a demo; the assets are tiny.
+@app.middleware("http")
+async def _no_cache_ui(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/ui"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # Web UI — served from /ui so / can still return JSON (CLI compatibility).
 if FRONTEND_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="ui")
@@ -141,6 +151,7 @@ def list_agents():
                 "agent_name": r["agent_name"],
                 "primary_facts_url": r["primary_facts_url"],
                 "private_facts_url": r["private_facts_url"],
+                "adaptive_resolver_url": r["adaptive_resolver_url"],
                 "registered_at": r["registered_at"],
             }
             for r in rows

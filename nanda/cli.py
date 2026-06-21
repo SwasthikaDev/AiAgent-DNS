@@ -4,11 +4,43 @@ This is the headline artifact for the demo. It walks the full chain the
 paper describes and prints every signature check, so a reviewer can see
 exactly what's being verified and when.
 
+Prerequisites (run once):
+  docker compose up --build -d        # start the 6-service stack
+  pip install -r requirements.txt     # deps for this CLI
+  python scripts/bootstrap.py         # register the 3 demo agents
+
 Commands:
-  list                          List agents the index knows about.
-  resolve <agent_name>          Walk index -> AgentAddr -> AgentFacts, verify all sigs.
-  call <agent_name> [--message] Resolve then POST the message to the agent's endpoint.
-  demo-tamper <agent_name>      Fetch facts, mutate them, show the client rejecting the sig.
+  list
+      List every agent the index knows about.
+
+  resolve <agent_name> [--private] [--show-facts]
+      Walk index -> AgentAddr -> AgentFacts, verifying every signature.
+      --private     fetch facts via the third-party (private) host
+      --show-facts  also print the full AgentFacts VC JSON
+
+  call <agent_name> [-m/--message TEXT] [--private] [--adaptive] [--region us-east|eu-west]
+      Resolve + verify, then POST a message to the agent's endpoint.
+      --adaptive    route via the §VI Adaptive Resolver (multiregion agent only)
+      --region      region hint for adaptive geo routing
+
+  verify-did <agent_name>
+      Verify AgentFacts by recovering the agent's key from its own did:key
+      (paper-faithful), instead of trusting the index's key copy.
+
+  demo-tamper <agent_name>
+      Fetch facts, mutate one field, and show the client rejecting the signature.
+
+Examples:
+  python -m nanda.cli list
+  python -m nanda.cli resolve urn:agent:demo:echo
+  python -m nanda.cli resolve urn:agent:demo:translate --private --show-facts
+  python -m nanda.cli call urn:agent:demo:echo --message "hello"
+  python -m nanda.cli call urn:agent:demo:multiregion --adaptive --region eu-west
+  python -m nanda.cli verify-did urn:agent:demo:echo
+  python -m nanda.cli demo-tamper urn:agent:demo:echo
+
+  python -m nanda.cli --help          # all commands
+  python -m nanda.cli call --help     # flags for one command
 """
 
 from __future__ import annotations
