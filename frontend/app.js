@@ -121,6 +121,7 @@ async function pingService(url) {
 
 async function refreshStatus() {
   const el = $("#serviceStatus");
+  if (!el) return; // status pills removed from the header — nothing to render
   el.innerHTML = SERVICES.map(
     (s) =>
       `<span class="status-pill"><span class="status-dot unknown" data-svc="${s.name}"></span><span class="text-slate-300">${s.name}</span></span>`
@@ -195,11 +196,28 @@ function renderAgentRow(a) {
 }
 
 function populateAgentSelects() {
-  const opts = AGENT_CACHE.map(
-    (a) => `<option value="${a.agent_name}">${a.agent_name}</option>`
-  ).join("");
-  $("#callAgentSelect").innerHTML = opts;
-  $("#tamperAgentSelect").innerHTML = opts;
+  const opt = (a, mark) =>
+    `<option value="${a.agent_name}">${a.agent_name}${mark && a.adaptive_resolver_url ? "  ·  adaptive" : ""}</option>`;
+  $("#callAgentSelect").innerHTML = AGENT_CACHE.map((a) => opt(a, true)).join("");
+  $("#tamperAgentSelect").innerHTML = AGENT_CACHE.map((a) => opt(a, false)).join("");
+  syncAdaptiveAvailability();
+}
+
+// Enable the adaptive controls only for agents that actually have an
+// adaptive_resolver_url. Otherwise disable + hint, so you don't tick the toggle
+// and hit a dead end after a full resolve.
+function syncAdaptiveAvailability() {
+  const name = $("#callAgentSelect").value;
+  const agent = AGENT_CACHE.find((a) => a.agent_name === name);
+  const supported = !!(agent && agent.adaptive_resolver_url);
+  const toggle = $("#adaptiveToggle");
+  const region = $("#regionSelect");
+  const hint = $("#adaptiveHint");
+  toggle.disabled = !supported;
+  region.disabled = !supported;
+  if (!supported) toggle.checked = false;
+  toggle.closest("label")?.classList.toggle("opacity-50", !supported);
+  if (hint) hint.textContent = supported ? "" : "only the multiregion agent supports adaptive routing";
 }
 
 function onAgentAction(action, name) {
@@ -210,6 +228,9 @@ function onAgentAction(action, name) {
   } else if (action === "call") {
     $("#callAgentSelect").value = name;
     $("#callBtn").click();
+    // Scroll to the cascade so the user watches the same panel as Resolve —
+    // Call just continues that story with the call step + the response.
+    $("#resolutionPanel").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
 
@@ -227,9 +248,7 @@ function appendStep(host, { num, total, title, detail, status }) {
   const node = document.createElement("div");
   node.className = `cascade-step ${status}`;
   node.innerHTML = `
-    <div class="step-num ${status}">${
-      status === "success" ? "✓" : status === "error" ? "✗" : num
-    }</div>
+    <div class="step-num ${status}">${num}</div>
     <div class="min-w-0 flex-1">
       <div class="step-title">${title}</div>
       ${detail ? `<div class="step-detail">${detail}</div>` : ""}
@@ -257,6 +276,8 @@ const fmtBytes = (n) => `${n.toLocaleString()} bytes`;
 const fmtSig = (s) => s ? `${s.slice(0, 16)}…${s.slice(-8)}` : "?";
 const fmtMethod = (m) => `<span class="http-method-${m}">${m}</span>`;
 const fmtStatus = (s) => (s >= 200 && s < 300) ? `<span class="tech-ok">${s} OK</span>` : `<span class="tech-fail">${s}</span>`;
+// The resolver's "default" policy is round-robin; show the friendlier name.
+const policyLabel = (p) => (p === "default" ? "round-robin" : p);
 // Canonicalised payload byte count for a given JS object (matches what nacl verifies).
 const canonBytes = (obj) => new TextEncoder().encode(canonicalize(obj)).length;
 
@@ -327,9 +348,8 @@ async function runResolutionCascade(agentName, options = {}) {
   const indexPub = pubFetch.body.public_key;
   host.lastChild.className = "cascade-step success shown";
   host.lastChild.querySelector(".step-num").className = "step-num success";
-  host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
-    `pubkey&nbsp;<span class="text-blue-700 font-semibold">${indexPub.slice(0, 28)}…</span>`;
+    `pubkey&nbsp;<span class="text-blue-700 font-semibold break-all">${indexPub}</span>`;
   addStepTech(host, [
     `${fmtMethod("GET")} <span class="tech-value">${CFG.INDEX_URL}/</span> → ${fmtStatus(pubFetch.status)} <span class="tech-label">·</span> ${fmtBytes(pubFetch.bytes)}`,
     `<span class="tech-label">↳ cached:</span> 32-byte Ed25519 public key <span class="tech-label">(base64)</span>`,
@@ -348,7 +368,6 @@ async function runResolutionCascade(agentName, options = {}) {
   if (!addrFetch.body) {
     host.lastChild.className = "cascade-step error shown";
     host.lastChild.querySelector(".step-num").className = "step-num error";
-    host.lastChild.querySelector(".step-num").textContent = "✗";
     host.lastChild.querySelector(".step-detail").innerHTML = `Not found.`;
     addStepTech(host, [
       `${fmtMethod("GET")} <span class="tech-value">${CFG.INDEX_URL}/resolve/${agentName}</span> → ${fmtStatus(addrFetch.status)}`,
@@ -358,14 +377,13 @@ async function runResolutionCascade(agentName, options = {}) {
   const addr = addrFetch.body;
   host.lastChild.className = "cascade-step success shown";
   host.lastChild.querySelector(".step-num").className = "step-num success";
-  host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
     `agent_id&nbsp;<span class="text-violet-700 font-semibold">${addr.agent_id}</span>`;
   addStepTech(host, [
     `${fmtMethod("GET")} <span class="tech-value">${CFG.INDEX_URL}/resolve/${agentName}</span> → ${fmtStatus(addrFetch.status)} <span class="tech-label">·</span> ${fmtBytes(addrFetch.bytes)}`,
     `<span class="tech-label">↳ received:</span> signed AgentAddr <span class="tech-label">(${Object.keys(addr).length} fields, TTL ${addr.ttl}s)</span>`,
-    `<span class="tech-label">↳ agent pubkey:</span> <span class="tech-value">${addr.public_key.slice(0,28)}…</span>`,
-    `<span class="tech-label">↳ index signature:</span> <span class="tech-value">${fmtSig(addr.signature)}</span>`,
+    `<span class="tech-label">↳ agent pubkey:</span> <span class="tech-value">${addr.public_key}</span>`,
+    `<span class="tech-label">↳ index signature:</span> <span class="tech-value">${addr.signature}</span>`,
   ]);
   await sleep(350);
 
@@ -380,7 +398,6 @@ async function runResolutionCascade(agentName, options = {}) {
   const addrOK = verifyEd25519(addr, indexPub);
   host.lastChild.className = `cascade-step ${addrOK ? "success" : "error"} shown`;
   host.lastChild.querySelector(".step-num").className = `step-num ${addrOK ? "success" : "error"}`;
-  host.lastChild.querySelector(".step-num").textContent = addrOK ? "✓" : "✗";
   addStepTech(host, [
     `<span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical, sig, indexPubkey)</span>`,
     `<span class="tech-label">payload:</span> ${fmtBytes(addrCanonBytes)} JCS-canonical JSON <span class="tech-label">(RFC 8785, signature field stripped)</span>`,
@@ -393,6 +410,8 @@ async function runResolutionCascade(agentName, options = {}) {
       `<span class="text-red-700 font-semibold">signature INVALID — index would be impersonated</span>`;
     return null;
   }
+  // Show the verified AgentAddr right under the step that produced it.
+  appendJsonCard(host, "Signed AgentAddr (verified)", addr, { highlightSig: true });
   await sleep(350);
 
   // ─── 4) fetch AgentFacts ─────────────────────────────────────────────
@@ -411,22 +430,20 @@ async function runResolutionCascade(agentName, options = {}) {
   if (!factsFetch.body) {
     host.lastChild.className = "cascade-step error shown";
     host.lastChild.querySelector(".step-num").className = "step-num error";
-    host.lastChild.querySelector(".step-num").textContent = "✗";
     addStepTech(host, [`${fmtMethod("GET")} ${factsUrl} → ${fmtStatus(factsFetch.status)}`]);
     return null;
   }
   const facts = factsFetch.body;
   host.lastChild.className = "cascade-step success shown";
   host.lastChild.querySelector(".step-num").className = "step-num success";
-  host.lastChild.querySelector(".step-num").textContent = "✓";
   host.lastChild.querySelector(".step-detail").innerHTML =
     `label&nbsp;<span class="text-amber-700 font-semibold">"${facts.credentialSubject?.label ?? "(unknown)"}"</span>`;
   addStepTech(host, [
     `${fmtMethod("GET")} <span class="tech-value">${factsUrl}</span> → ${fmtStatus(factsFetch.status)} <span class="tech-label">·</span> ${fmtBytes(factsFetch.bytes)}`,
     `<span class="tech-label">↳ type:</span> W3C ${(facts.type || []).join(" / ")}`,
-    `<span class="tech-label">↳ issuer:</span> <span class="tech-value">${(facts.issuer || "").slice(0,32)}…</span>`,
+    `<span class="tech-label">↳ issuer:</span> <span class="tech-value">${facts.issuer || ""}</span>`,
     `<span class="tech-label">↳ cryptosuite:</span> <span class="tech-value">${facts.proof?.cryptosuite || "?"}</span>`,
-    `<span class="tech-label">↳ proofValue:</span> <span class="tech-value">${fmtSig(facts.proof?.proofValue)}</span>`,
+    `<span class="tech-label">↳ proofValue:</span> <span class="tech-value">${facts.proof?.proofValue || ""}</span>`,
   ]);
   await sleep(350);
 
@@ -441,7 +458,6 @@ async function runResolutionCascade(agentName, options = {}) {
   const factsOK = verifyVC(facts, addr.public_key);
   host.lastChild.className = `cascade-step ${factsOK ? "success" : "error"} shown`;
   host.lastChild.querySelector(".step-num").className = `step-num ${factsOK ? "success" : "error"}`;
-  host.lastChild.querySelector(".step-num").textContent = factsOK ? "✓" : "✗";
   addStepTech(host, [
     `<span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical, proofValue, agentPubkey)</span>`,
     `<span class="tech-label">payload:</span> ${fmtBytes(vcCanonBytes)} JCS-canonical JSON <span class="tech-label">(proof block stripped)</span>`,
@@ -454,15 +470,9 @@ async function runResolutionCascade(agentName, options = {}) {
       `<span class="text-red-700 font-semibold">VC signature INVALID — refusing to trust endpoint</span>`;
     return null;
   }
+  // Show the verified VC right under the step that produced it.
+  appendJsonCard(host, "AgentFacts — W3C VC v2 (verified)", facts, { highlightSig: true });
   await sleep(200);
-
-  // Show the resolved docs.
-  appendJsonCard(cascadeEl(), "Signed AgentAddr (verified)", addr, {
-    highlightSig: true,
-  });
-  appendJsonCard(cascadeEl(), "AgentFacts — W3C VC v2 (verified)", facts, {
-    highlightSig: true,
-  });
 
   // Endpoint banner — pull the verified endpoint out of credentialSubject.
   const endpoint = facts.credentialSubject.endpoints.static[0];
@@ -501,6 +511,9 @@ function appendExtraStep({ num, title, detail, status, tech }) {
   if (tech) addStepTech(host, tech);
 }
 
+// Keep the adaptive controls in sync with whichever agent is selected.
+$("#callAgentSelect").addEventListener("change", syncAdaptiveAvailability);
+
 // ----------- Call ----------------------------------------------------
 $("#callBtn").addEventListener("click", async () => {
   const name = $("#callAgentSelect").value;
@@ -518,6 +531,7 @@ $("#callBtn").addEventListener("click", async () => {
   }
 
   let endpoint;
+  let routing = null; // {region, policy} when the adaptive resolver chose for us
 
   // ─── Optional adaptive dispatch (extends the cascade panel) ─────────
   if (useAdaptive) {
@@ -528,7 +542,13 @@ $("#callBtn").addEventListener("click", async () => {
       </div>`;
       return;
     }
-    const dispatchBody = { agent_name: name, client_region: region, policy: "geo" };
+    // Auto → let the resolver decide (round-robin, no region sent); a pinned
+    // region → geo override. This mirrors production: the resolver chooses by
+    // default; an explicit region is just a manual override for the demo.
+    const dispatchBody =
+      region === "auto"
+        ? { agent_name: name, policy: "default" }
+        : { agent_name: name, client_region: region, policy: "geo" };
 
     // Step 6: dispatch to resolver
     appendExtraStep({
@@ -552,7 +572,6 @@ $("#callBtn").addEventListener("click", async () => {
       const host = $("#cascadeSteps");
       host.lastChild.className = "cascade-step error shown";
       host.lastChild.querySelector(".step-num").className = "step-num error";
-      host.lastChild.querySelector(".step-num").textContent = "✗";
       addStepTech(host, [`error: ${e.message}`]);
       return;
     }
@@ -560,15 +579,14 @@ $("#callBtn").addEventListener("click", async () => {
       const host = $("#cascadeSteps");
       host.lastChild.className = "cascade-step success shown";
       host.lastChild.querySelector(".step-num").className = "step-num success";
-      host.lastChild.querySelector(".step-num").textContent = "✓";
       host.lastChild.querySelector(".step-detail").innerHTML =
-        `region&nbsp;<span class="text-amber-700 font-semibold">${token.region}</span> · policy&nbsp;<span class="text-amber-700 font-semibold">${token.policy_applied}</span>`;
+        `resolver chose&nbsp;<span class="text-amber-700 font-semibold">${token.region}</span> · policy&nbsp;<span class="text-amber-700 font-semibold">${policyLabel(token.policy_applied)}</span>`;
       addStepTech(host, [
         `${fmtMethod("POST")} <span class="tech-value">${resolverUrl}</span> → ${fmtStatus(dispatchStatus)} <span class="tech-label">·</span> ${fmtBytes(dispatchBytes)}`,
-        `<span class="tech-label">request body:</span> <span class="tech-value">{"agent_name":"${name}","client_region":"${region}","policy":"geo"}</span>`,
+        `<span class="tech-label">request body:</span> <span class="tech-value">${JSON.stringify(dispatchBody)}</span>`,
         `<span class="tech-label">↳ chosen endpoint:</span> <span class="tech-value">${token.endpoint}</span>`,
         `<span class="tech-label">↳ TTL window:</span> issued_at=${token.issued_at}, expires_at=${token.expires_at} <span class="tech-label">(${token.expires_at - token.issued_at}s)</span>`,
-        `<span class="tech-label">↳ resolver pubkey:</span> <span class="tech-value">${token.resolver_pubkey.slice(0,28)}…</span>`,
+        `<span class="tech-label">↳ resolver pubkey:</span> <span class="tech-value">${token.resolver_pubkey}</span>`,
       ]);
     }
     await sleep(300);
@@ -586,7 +604,6 @@ $("#callBtn").addEventListener("click", async () => {
       const host = $("#cascadeSteps");
       host.lastChild.className = `cascade-step ${tokenOK ? "success" : "error"} shown`;
       host.lastChild.querySelector(".step-num").className = `step-num ${tokenOK ? "success" : "error"}`;
-      host.lastChild.querySelector(".step-num").textContent = tokenOK ? "✓" : "✗";
       addStepTech(host, [
         `<span class="tech-label">op:</span> <span class="tech-value">nacl.sign.detached.verify(canonical, sig, resolverPubkey)</span>`,
         `<span class="tech-label">payload:</span> ${fmtBytes(tokenCanonBytes)} JCS-canonical JSON`,
@@ -598,6 +615,7 @@ $("#callBtn").addEventListener("click", async () => {
       resultBox.innerHTML = `<div class="alert alert-danger text-sm">Adaptive routing token failed signature verification. Refusing to call.</div>`;
       return;
     }
+    routing = { region: token.region, policy: policyLabel(token.policy_applied) };
     endpoint = token.endpoint;
     await sleep(300);
   } else {
@@ -623,7 +641,6 @@ $("#callBtn").addEventListener("click", async () => {
     const host = $("#cascadeSteps");
     host.lastChild.className = "cascade-step success shown";
     host.lastChild.querySelector(".step-num").className = "step-num success";
-    host.lastChild.querySelector(".step-num").textContent = "✓";
     host.lastChild.querySelector(".step-detail").innerHTML =
       `status&nbsp;<span class="text-emerald-700 font-semibold">${r.status}</span> · ${txt.length} bytes`;
     addStepTech(host, [
@@ -631,7 +648,28 @@ $("#callBtn").addEventListener("click", async () => {
       `<span class="tech-label">request body:</span> <span class="tech-value">${JSON.stringify({ message })}</span>`,
     ]);
 
+    // Append the response to the cascade too, so the panel tells the whole
+    // story end-to-end (resolve → verify → call → response) — this is what
+    // visibly separates Call from Resolve.
+    const cardTitle = routing
+      ? `Agent response — resolver chose ${routing.region} → ${endpoint}`
+      : `Agent response — ${endpoint}`;
+    appendJsonCard(cascadeEl(), cardTitle, body);
+
+    // When the resolver picked for us (esp. round-robin), make the chosen
+    // region/endpoint obvious in the response, not just buried in a step.
+    const routingNote = routing
+      ? `<div class="alert alert-info text-sm mb-3">
+           <span class="badge-result ok" style="background:#d97706">routed</span>
+           <div>Adaptive resolver chose region
+             <span class="font-semibold">${routing.region}</span>
+             <span class="text-slate-500">(policy: ${routing.policy})</span> →
+             <span class="font-mono">${endpoint}</span>
+           </div>
+         </div>`
+      : "";
     resultBox.innerHTML = `
+      ${routingNote}
       <p class="text-xs uppercase tracking-widest text-slate-500 mb-1.5 font-semibold">Response from <span class="font-mono text-slate-700">${endpoint}</span></p>
       <div class="json-block">${renderJson(body)}</div>
     `;

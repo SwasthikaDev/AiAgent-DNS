@@ -175,7 +175,6 @@
           <p class="text-xs text-slate-500">Beyond DNS · The Internet of AI Agents</p>
         </div>
       </div>
-      <div id="serviceStatus" class="flex items-center gap-1.5 flex-wrap" aria-live="polite"></div>
     </div>
   </header>
 
@@ -208,6 +207,12 @@
         <div class="flex gap-2 flex-wrap">
           <a href="code.html" class="btn-secondary whitespace-nowrap" title="How the code is structured and how a call routes through it">
             How the code works →
+          </a>
+          <a href="production.html" class="btn-secondary whitespace-nowrap" title="System-design practices for running this at real-world scale">
+            Production at scale →
+          </a>
+          <a href="dns.html" class="btn-secondary whitespace-nowrap" title="How this compares to DNS — what DNS got right and where it falls short for agents">
+            Compared to DNS →
           </a>
           <a href="design.html" class="btn-primary whitespace-nowrap" title="Open the visual flow diagrams">
             View design &amp; flow →
@@ -322,12 +327,14 @@
             <span>Use Adaptive Resolver (§VI)</span>
           </label>
           <div class="flex items-center gap-2 text-sm">
-            <label for="regionSelect" class="text-slate-600">Region:</label>
-            <select id="regionSelect" class="form-input text-sm sm:w-40" style="padding-top:0.4rem; padding-bottom:0.4rem;">
-              <option value="us-east">us-east</option>
-              <option value="eu-west">eu-west</option>
+            <label for="regionSelect" class="text-slate-600">Routing:</label>
+            <select id="regionSelect" class="form-input text-sm sm:w-56" style="padding-top:0.4rem; padding-bottom:0.4rem;">
+              <option value="auto" selected>Auto — resolver decides (round-robin)</option>
+              <option value="us-east">Pin to us-east</option>
+              <option value="eu-west">Pin to eu-west</option>
             </select>
           </div>
+          <span id="adaptiveHint" class="text-xs text-amber-700 basis-full"></span>
         </div>
         <div id="callResult" class="mt-5 hidden"></div>
       </div>
@@ -371,7 +378,7 @@
     </footer>
   </main>
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=2"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

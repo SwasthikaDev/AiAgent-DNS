@@ -318,8 +318,10 @@ sequenceDiagram
         <p class="diagram-desc">
           If the agent's <code>AgentAddr</code> includes an <code>adaptive_resolver_url</code> (the
           <em>multiregion</em> demo agent does), the client can skip the static endpoint
-          and ask the resolver for a routing token at request time. The token is signed by the resolver
-          and expires in <strong>60&nbsp;seconds</strong>, so even an intercepted token has a tiny damage window.
+          and ask the resolver for a routing token at request time. By default the <strong>resolver
+          decides</strong> the endpoint (round-robin here, GeoIP in production); pinning a region is an
+          optional override. The token is signed by the resolver and expires in
+          <strong>60&nbsp;seconds</strong>, so even an intercepted token has a tiny damage window.
         </p>
         <div class="mermaid-box">
 <pre class="mermaid">
@@ -339,7 +341,7 @@ sequenceDiagram
 
     rect rgb(254, 243, 199)
       Note over C,R: Adaptive dispatch — extra steps 6 & 7
-      C->>R: POST /dispatch<br/>{ agent_name, client_region, policy: geo }
+      C->>R: POST /dispatch<br/>{ agent_name, policy: default }<br/>(resolver decides — round-robin;<br/>geo / capability are overrides)
       R-->>C: signed routing token<br/>(endpoint, region, expires_at, resolver_pubkey, sig)
       Note over C: Ed25519 verify token<br/>against resolver_pubkey
     end
@@ -570,8 +572,8 @@ flowchart TB
               <tr>
                 <td class="py-2.5 pr-4 font-semibold text-slate-800">DID resolution</td>
                 <td class="py-2.5 pr-4 font-mono text-xs">§IV</td>
-                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">URN only</span></td>
-                <td class="py-2.5"><code>agent_name</code> is a plain URN; add <code>did:web</code> / <code>did:key</code> resolution.</td>
+                <td class="py-2.5 pr-4"><span class="text-amber-700 font-semibold">partial</span></td>
+                <td class="py-2.5"><code>did:key</code> is built — the agent's key is recovered from the VC's <code>verificationMethod</code>. Still to add: <code>did:web</code> and DID-based <code>agent_name</code>.</td>
               </tr>
               <tr>
                 <td class="py-2.5 pr-4 font-semibold text-slate-800">Privacy path transport</td>
