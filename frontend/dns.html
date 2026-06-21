@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NANDA Index Explorer — Compared to DNS</title>
+  <meta name="description" content="How the NANDA index compares to DNS: how DNS works, what it got right (and keeps it reliable), where it falls short for AI agents, and whether NANDA is affordable as an index." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231d4ed8'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>N</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style type="text/tailwindcss">
+    .card { @apply bg-white rounded-lg border border-slate-200 shadow-sm; }
+    .card-padded { @apply p-5 md:p-7; }
+    .sec-title { @apply text-lg font-semibold text-slate-900; }
+    .sec-desc  { @apply text-sm text-slate-600 mt-1 mb-5 max-w-3xl leading-relaxed; }
+    .btn-secondary {
+      @apply inline-flex items-center gap-2 bg-white text-slate-800 border border-slate-300
+             rounded-md px-3 py-1.5 text-sm font-semibold
+             hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400;
+    }
+    .mono { @apply font-mono text-[13px]; }
+    .eyebrow { @apply text-xs font-semibold uppercase tracking-widest mb-1; }
+    .lead { @apply text-sm text-slate-700 leading-relaxed; }
+    th, td { @apply align-top; }
+    li { @apply mb-1.5; }
+    .yes { @apply text-emerald-700 font-semibold; }
+    .no  { @apply text-rose-700 font-semibold; }
+    .dns { @apply text-slate-700; }
+    .nanda { @apply text-blue-800; }
+  </style>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- ============== HEADER ============== -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-[1100px] mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-md bg-blue-700 flex items-center justify-center font-bold text-white text-lg">N</div>
+        <div>
+          <h1 class="text-lg font-semibold text-slate-900">Compared to DNS</h1>
+          <p class="text-xs text-slate-500">NANDA Index Explorer · the system it goes "beyond"</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <a href="production.html" class="btn-secondary">Production</a>
+        <a href="index.html" class="btn-secondary">← Live demo</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-[1100px] mx-auto px-4 md:px-8 py-8 md:py-12 space-y-10">
+
+    <!-- ============== INTRO ============== -->
+    <section>
+      <p class="eyebrow text-slate-500">The system it goes beyond</p>
+      <h2 class="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight max-w-3xl">
+        DNS is the model — and the foil.
+      </h2>
+      <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
+        The paper is titled <em>Beyond DNS</em> for a reason: DNS is the most successful naming system ever built,
+        and NANDA borrows almost all of its operational wisdom. But DNS was designed in <strong>1983</strong> for
+        <em>static, human-operated</em> hosts — and that assumption breaks for AI agents that move every few seconds,
+        need verifiable capabilities, and demand sub-second revocation. This page covers <strong>how DNS works</strong>,
+        <strong>what keeps it reliable</strong> (which NANDA keeps), <strong>where it falls short for agents</strong>,
+        and whether NANDA can be <strong>affordable</strong> as an index.
+      </p>
+    </section>
+
+    <!-- ============== HOW DNS WORKS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-slate-500">Background</p>
+        <h3 class="sec-title">How DNS works in 30 seconds</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Maps a name → a static address</strong> (e.g. <code>example.com</code> → an IP via an A/AAAA record), plus MX, TXT, NS records.</li>
+          <li><strong>Hierarchical delegation:</strong> root servers (<code>.</code>) → TLD servers (<code>.com</code>) → the domain's authoritative name server. No single authority owns the whole tree.</li>
+          <li><strong>Resolution:</strong> your stub resolver asks a recursive resolver (your ISP, or <code>8.8.8.8</code> / <code>1.1.1.1</code>), which walks root → TLD → authoritative, then caches the answer.</li>
+          <li><strong>Caching governed by TTLs</strong> at every layer — most queries never reach an authoritative server. This is the secret to DNS's scale.</li>
+          <li>Scale today: ~<strong>300M+ domains</strong>, ~<strong>10B+ lookups/day</strong> — but they're mostly <em>static</em> records updated minutes-to-hours apart.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== WHAT DNS GOT RIGHT ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-emerald-700">What DNS got right</p>
+        <h3 class="sec-title">The measures that keep DNS reliable, available &amp; fault-tolerant</h3>
+        <p class="sec-desc">
+          DNS has stayed up for 40 years at planetary scale. NANDA deliberately inherits these — the paper says it
+          aims to do this <em>"without abandoning existing web infrastructure."</em>
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Measure</th><th class="py-2 pr-4">How DNS does it</th><th class="py-2">Does NANDA keep it?</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Aggressive caching + TTL</td><td class="py-2 pr-4 dns">Recursive resolvers cache answers; most queries served from cache.</td><td class="py-2"><span class="yes">✔ keeps</span> — layered TTLs (AgentAddr 1 h, VC 5 m, token 60 s) + CDN edge caching.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Anycast + edge replication</td><td class="py-2 pr-4 dns">13 root "letters" → thousands of physical instances via anycast; nearest answers.</td><td class="py-2"><span class="yes">✔ keeps</span> — anycast + geo-replicas for &lt;1 s global resolution.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Hierarchy / delegation</td><td class="py-2 pr-4 dns">Root → TLD → authoritative; no one owns the whole tree.</td><td class="py-2"><span class="yes">✔ keeps</span> — the "quilt": federated indexes + enterprise registries.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Redundancy</td><td class="py-2 pr-4 dns">Multiple NS records per zone, multiple root operators.</td><td class="py-2"><span class="yes">✔ keeps</span> — federated, replicated indexes; no single point of failure.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Lean records</td><td class="py-2 pr-4 dns">Tiny records → cheap to store, replicate, cache.</td><td class="py-2"><span class="yes">✔ keeps &amp; improves</span> — ≤120 B records, ~10⁴× fewer writes.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Eventual consistency</td><td class="py-2 pr-4 dns">Accepts staleness within TTL (an AP system) to stay available.</td><td class="py-2"><span class="yes">✔ keeps</span> — AP for resolution, made safe by signing + TTLs.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Signed records (DNSSEC)</td><td class="py-2 pr-4 dns">Optional record signing, chain of trust from root — partial adoption.</td><td class="py-2"><span class="yes">✔ keeps &amp; mandates</span> — everything is signed (Ed25519/W3C VC), not optional.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== WHERE DNS FALLS SHORT ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">Where DNS falls short for agents</p>
+        <h3 class="sec-title">The gaps NANDA exists to close</h3>
+        <p class="sec-desc">DNS's assumptions — static records, ownership-only trust, slow updates — are exactly what break at agent scale (paper §I–II).</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Gap</th><th class="py-2 pr-4">DNS</th><th class="py-2 pr-4">NANDA's answer</th><th class="py-2">§</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Static vs dynamic</td><td class="py-2 pr-4 dns">Fixed A/AAAA records; updates take minutes–hours.</td><td class="py-2 pr-4 nanda">TTL-scoped tiers — static (1–6 h), rotating (5–15 m), adaptive (30–60 s); &lt;1 s global.</td><td class="py-2 mono">II.C</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Trust model</td><td class="py-2 pr-4 dns">A TLS cert proves you <em>own a domain</em> — nothing about code or behaviour.</td><td class="py-2 pr-4 nanda">W3C Verifiable Credentials — signed <em>capability</em> proofs, not just ownership.</td><td class="py-2 mono">II.G, VII</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Revocation</td><td class="py-2 pr-4 dns">Weak &amp; slow (cert CRL/OCSP; DNS TTL expiry).</td><td class="py-2 pr-4 nanda">Sub-second VC-Status revocation + short-lived (&lt;5 min) credentials.</td><td class="py-2 mono">VII.D</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Privacy</td><td class="py-2 pr-4 dns">Lookups expose who asks for what (DoH/DoT only partial).</td><td class="py-2 pr-4 nanda">Dual-path resolution — <code>PrivateFactsURL</code> hides the requester; split-horizon.</td><td class="py-2 mono">VII.C</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Routing</td><td class="py-2 pr-4 dns">Fixed records; geo-LB/DDoS handled by bolt-on CDNs.</td><td class="py-2 pr-4 nanda">Native adaptive resolver — geo / load / capability / DDoS-shuffle, signed tokens.</td><td class="py-2 mono">VI</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Scale assumption</td><td class="py-2 pr-4 dns">Built for millions of <em>static</em> records, not billions of updates/hour.</td><td class="py-2 pr-4 nanda">Lean index + decentralized, index-free metadata publishing (10k updates/s/shard).</td><td class="py-2 mono">II.A, II.D</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== DNS FAILURES ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">DNS isn't infallible</p>
+        <h3 class="sec-title">Real failures that drove its defences</h3>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>Cache poisoning (Kaminsky, 2008)</strong> — attackers could inject forged records into resolver caches. Drove <strong>DNSSEC</strong> (record signing). NANDA's lesson: <em>sign everything by default</em>, so a cache can never serve a forged answer.</li>
+          <li><strong>The Dyn DDoS (2016)</strong> — a botnet flooded a major DNS provider and took down Twitter, Netflix, Reddit, etc. A reminder that even a distributed system has hot spots. NANDA's lesson: <em>aggressive edge caching + anycast + signed-cacheable records</em> so a downed origin doesn't stop resolution.</li>
+          <li><strong>Slow propagation</strong> — a TTL of hours means a changed record can be stale globally for hours. Fine for a website; fatal for an agent that moved 5 seconds ago. NANDA's lesson: <em>short, tiered TTLs + push volatile state off the index</em>.</li>
+        </ul>
+        <p class="text-[11px] text-slate-500 mt-3 italic">
+          The pattern: each DNS weakness was patched <em>after the fact</em> (DNSSEC, DoH, anycast hardening). NANDA
+          bakes those lessons in from the start — signing, privacy paths, and dynamism are core, not bolt-ons.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== SIDE BY SIDE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">At a glance</p>
+        <h3 class="sec-title">DNS vs the NANDA index</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Dimension</th><th class="py-2 pr-4">DNS</th><th class="py-2">NANDA</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Resolves</td><td class="py-2 pr-4 dns">name → static IP</td><td class="py-2 nanda">name → signed AgentAddr → dynamic AgentFacts → live endpoint</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Designed (year / for)</td><td class="py-2 pr-4 dns">1983 / static web hosts</td><td class="py-2 nanda">2025 / dynamic AI agents</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Update speed</td><td class="py-2 pr-4 dns">minutes–hours</td><td class="py-2 nanda">&lt; 1 s global</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Trust</td><td class="py-2 pr-4 dns">domain ownership (TLS cert)</td><td class="py-2 nanda">cryptographic capability proofs (W3C VC)</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Revocation</td><td class="py-2 pr-4 dns">slow / weak</td><td class="py-2 nanda">sub-second (VC-Status)</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Privacy of lookup</td><td class="py-2 pr-4 dns">exposed (DoH partial)</td><td class="py-2 nanda">dual-path, requester hidden</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Routing</td><td class="py-2 pr-4 dns">fixed (CDN bolt-on)</td><td class="py-2 nanda">native adaptive resolver</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Integrity</td><td class="py-2 pr-4 dns">DNSSEC (optional)</td><td class="py-2 nanda">signed by default (mandatory)</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Consistency model</td><td class="py-2 pr-4 dns">eventual (AP)</td><td class="py-2 nanda">eventual (AP) — same wisdom</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============== COST / SUSTAINABILITY ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Is it affordable?</p>
+        <h3 class="sec-title">Can NANDA sustain as an index — or is it too expensive?</h3>
+        <p class="sec-desc">
+          The honest worry: NANDA does <em>more</em> than DNS (verification, dynamism, privacy, routing) — so isn't it
+          more expensive to run? The answer is in the architecture: <strong>the costly parts are deliberately kept off
+          the index.</strong>
+        </p>
+        <ul class="lead list-disc pl-5 mt-2">
+          <li><strong>The core index stays cheap — by design.</strong> ≤120 B records and ~10⁴× fewer writes than DNS mean low storage and write cost; reads are served from edge caches. The index is engineered to be DNS-cheap precisely so it <em>can</em> sustain at scale.</li>
+          <li><strong>Expensive work is pushed to the edges, paid by whoever benefits.</strong> Rich metadata (AgentFacts) is hosted and paid for by the <em>agent</em> (self-host / CDN / IPFS); adaptive routing is stateless edge compute; credential verification is <strong>offline and cacheable</strong>, so it doesn't hit a central server per request. The index never carries that load.</li>
+          <li><strong>Federation spreads the cost.</strong> Like DNS root servers run by different operators, the NANDA index is a <em>quilt</em> — enterprises, clouds, and public bodies each run a shard, so no single party funds the whole thing.</li>
+          <li><strong>The added cost vs DNS is real but bounded.</strong> A resolution does more crypto than a DNS lookup, but Ed25519 verification is microseconds and happens <em>client-side</em> on cached, signed objects — it scales with clients, not with the index.</li>
+        </ul>
+        <p class="lead mt-3">
+          <strong>The open question (paper §XI.H):</strong> who pays for hosting and how — micropayments, staking, or
+          usage tiers — without rent-seeking or gatekeeping. The economics are unsolved, but the <em>technical</em>
+          design ensures the index itself is cheap enough to run as shared public infrastructure, exactly as DNS is.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== VERDICT ============== -->
+    <section>
+      <div class="card card-padded bg-slate-50/60">
+        <p class="eyebrow text-slate-500">Verdict</p>
+        <h3 class="sec-title">Not a replacement — DNS's wisdom, plus the parts agents need</h3>
+        <p class="lead mt-2">
+          NANDA isn't trying to kill DNS; it sits <em>beside and above</em> it. It <strong>keeps</strong> everything that
+          made DNS reliable at planet scale — caching, TTLs, anycast, hierarchy, redundancy, lean records, eventual
+          consistency, signed records — and <strong>adds</strong> what DNS structurally can't give agents: verifiable
+          capabilities, sub-second revocation, privacy-preserving lookups, and dynamic routing. The leanness that makes
+          DNS cheap is the same leanness that lets NANDA scale affordably. In one line:
+          <strong>NANDA is DNS's operating model, re-pointed from static hosts to trust-aware, fast-moving AI agents.</strong>
+        </p>
+      </div>
+    </section>
+
+    <footer class="text-center text-xs text-slate-500 pt-8 border-t border-slate-200">
+      <p>
+        <a href="index.html" class="text-blue-700 hover:underline font-medium">Live demo</a> ·
+        <a href="code.html" class="text-blue-700 hover:underline font-medium">How the code works</a> ·
+        <a href="production.html" class="text-blue-700 hover:underline font-medium">Production at scale</a> ·
+        <a href="design.html" class="text-blue-700 hover:underline font-medium">Design &amp; flow</a> ·
+        <a href="https://arxiv.org/pdf/2507.14263" class="text-blue-700 hover:underline font-medium" target="_blank" rel="noopener">NANDA paper (PDF)</a>
+      </p>
+    </footer>
+  </main>
+</body>
+</html>
