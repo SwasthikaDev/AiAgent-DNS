@@ -759,6 +759,91 @@ $("#tamperBtn").addEventListener("click", async () => {
   `;
 });
 
+// ----------- TTL / cache-expiry demo --------------------------------
+// Caches the multiregion agent's three signed objects and counts each TTL down
+// live. The 60s routing token expires while you watch; AgentAddr (1h) and
+// AgentFacts (5m) outlast the demo — the layered-TTL idea, with real values.
+let _ttlInterval = null;
+
+$("#ttlBtn").addEventListener("click", async () => {
+  const out = $("#ttlResult");
+  out.classList.remove("hidden");
+  out.innerHTML = `<div class="text-sm text-slate-500">Fetching and caching the multiregion agent's signed objects…</div>`;
+  if (_ttlInterval) clearInterval(_ttlInterval);
+
+  const name = "urn:agent:demo:multiregion";
+  let addr, facts, token;
+  try {
+    addr = await fetchAddr(name);
+    facts = await fetchFacts(addr.primary_facts_url);
+    const r = await fetch(addr.adaptive_resolver_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_name: name, policy: "default" }),
+    });
+    token = await r.json();
+  } catch (e) {
+    out.innerHTML = `<div class="alert alert-danger text-sm">Setup failed: ${e.message}. Is the stack up and bootstrapped?</div>`;
+    return;
+  }
+
+  const start = Date.now() / 1000; // unix seconds; cache lifetime starts now
+  const items = [
+    { label: "AgentAddr — index identity", ttl: addr.ttl, color: "#3b82f6" },
+    { label: "AgentFacts VC — capabilities", ttl: facts.credentialSubject.ttl, color: "#8b5cf6" },
+    // token TTL is the real (expires_at − issued_at) window from the resolver.
+    { label: "Routing token — live endpoint", ttl: token.expires_at - token.issued_at, color: "#f59e0b" },
+  ].map((it) => ({ ...it, expiry: start + it.ttl }));
+
+  const fmt = (s) => {
+    s = Math.max(0, Math.ceil(s));
+    const m = Math.floor(s / 60), ss = s % 60;
+    return m > 0 ? `${m}m ${ss}s` : `${ss}s`;
+  };
+
+  out.innerHTML =
+    items.map((it, i) => `
+      <div class="mb-4">
+        <div class="flex items-center justify-between text-sm flex-wrap gap-1">
+          <span class="font-semibold">${it.label}
+            <span class="text-slate-400 font-normal">· TTL ${fmt(it.ttl)}</span>
+          </span>
+          <span id="ttl-status-${i}" class="font-mono text-xs text-slate-600"></span>
+        </div>
+        <div class="mt-1 h-2.5 rounded bg-slate-200 overflow-hidden">
+          <div id="ttl-bar-${i}" class="h-full rounded"
+               style="width:100%; background-color:${it.color}; transition: width 1s linear;"></div>
+        </div>
+      </div>`).join("") +
+    `<button id="ttlRefresh" class="btn-secondary btn-sm mt-1">Re-fetch all</button>
+     <p class="text-[11px] text-slate-500 mt-3 leading-relaxed">
+       Within its TTL an object is served from cache (no re-resolution). At expiry the client must re-fetch —
+       the routing token expires in 60&nbsp;s; the others persist much longer. Revocation can invalidate
+       <em>before</em> TTL when needed.
+     </p>`;
+
+  $("#ttlRefresh").addEventListener("click", () => $("#ttlBtn").click());
+
+  const tick = () => {
+    const t = Date.now() / 1000;
+    items.forEach((it, i) => {
+      const rem = it.expiry - t;
+      const pct = Math.max(0, Math.min(100, (rem / it.ttl) * 100));
+      const expired = rem <= 0;
+      const bar = document.getElementById(`ttl-bar-${i}`);
+      const st = document.getElementById(`ttl-status-${i}`);
+      if (!bar || !st) return;
+      bar.style.width = pct + "%";
+      bar.style.backgroundColor = expired ? "#ef4444" : it.color;
+      st.innerHTML = expired
+        ? `<span class="text-red-700 font-semibold">EXPIRED — re-fetch required</span>`
+        : `<span class="text-emerald-700">FRESH</span> · ${fmt(rem)} left`;
+    });
+  };
+  tick();
+  _ttlInterval = setInterval(tick, 1000);
+});
+
 // ----------- Boot ----------------------------------------------------
 $("#refreshBtn").addEventListener("click", () => {
   refreshStatus();
