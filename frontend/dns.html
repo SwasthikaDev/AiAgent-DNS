@@ -28,6 +28,7 @@
     li { @apply mb-1.5; }
     .yes { @apply text-emerald-700 font-semibold; }
     .no  { @apply text-rose-700 font-semibold; }
+    .partial { @apply text-amber-700 font-semibold; }
     .dns { @apply text-slate-700; }
     .nanda { @apply text-blue-800; }
   </style>
@@ -154,6 +155,98 @@
         <p class="text-[11px] text-slate-500 mt-3 italic">
           The pattern: each DNS weakness was patched <em>after the fact</em> (DNSSEC, DoH, anycast hardening). NANDA
           bakes those lessons in from the start — signing, privacy paths, and dynamism are core, not bolt-ons.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== ATTACK SURFACE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">Threat model</p>
+        <h3 class="sec-title">How DNS is attacked — and whether the same tactic works on NANDA</h3>
+        <p class="sec-desc">
+          The decisive difference is that NANDA <strong>signs everything and verifies client-side</strong>. That
+          neutralises the entire class of <em>integrity/authenticity</em> attacks that plague DNS — forging or
+          tampering with a record becomes <em>detectable and rejected</em> instead of catastrophic. What remains are
+          availability, key-management, and naming problems, which are <em>managed</em>, not magically solved.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Attack</th><th class="py-2 pr-4">Effect on DNS</th><th class="py-2 pr-4">NANDA</th><th class="py-2">Why / defence</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Cache poisoning / spoofing <span class="dns">(Kaminsky)</span></td>
+                <td class="py-2.5 pr-4 dns">Inject forged records into a resolver cache → users sent to a malicious IP.</td>
+                <td class="py-2.5 pr-4 yes">✗ blocked</td>
+                <td class="py-2.5 text-slate-700">A poisoned entry fails Ed25519/VC verification → rejected. DNS needed <em>optional</em> DNSSEC; NANDA signs by default.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">On-path MITM tampering</td>
+                <td class="py-2.5 pr-4 dns">Alter a response in transit.</td>
+                <td class="py-2.5 pr-4 yes">✗ blocked</td>
+                <td class="py-2.5 text-slate-700">Any mutation breaks the signature → client refuses (this is the tamper-detection demo).</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">BGP / route hijack to a rogue resolver</td>
+                <td class="py-2.5 pr-4 dns">Reroute lookups to an attacker's server.</td>
+                <td class="py-2.5 pr-4 yes">✗ blocked (integrity)</td>
+                <td class="py-2.5 text-slate-700">The rogue can't produce valid signatures, so forged data is rejected. (It can still <em>deny</em> service — that's availability, below.)</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">DDoS / amplification</td>
+                <td class="py-2.5 pr-4 dns">Flood the infrastructure (Dyn 2016); abuse open resolvers to amplify.</td>
+                <td class="py-2.5 pr-4 partial">△ partial</td>
+                <td class="py-2.5 text-slate-700">Still possible (any service). Mitigated by edge cache + anycast + CDN absorbing floods; signed-cacheable records keep serving during an origin attack; rate-limit so you're not an amplifier.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Replay (serve an old valid record)</td>
+                <td class="py-2.5 pr-4 dns">Re-present a stale-but-signed answer.</td>
+                <td class="py-2.5 pr-4 partial">△ bounded</td>
+                <td class="py-2.5 text-slate-700">TTL + fresh <code>issued_at</code> + short-lived VCs (&lt;5 min) cap the window. The paper names "replay window risk" as a known residual.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Signing-key compromise</td>
+                <td class="py-2.5 pr-4 dns">Steal a zone key → forge anything in that zone.</td>
+                <td class="py-2.5 pr-4 no">⚠ serious</td>
+                <td class="py-2.5 text-slate-700">Same risk if the index/agent/resolver key leaks. Defend with KMS/HSM, rotation, fast revocation, and 3-key blast-radius isolation.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Typosquatting / look-alike names</td>
+                <td class="py-2.5 pr-4 dns">Register <code>gooogle.com</code> to fool users.</td>
+                <td class="py-2.5 pr-4 partial">△ residual</td>
+                <td class="py-2.5 text-slate-700">A look-alike agent name is still registerable, but it won't carry the right <em>issuer / credentials / reputation</em> — trust policy (whitelisted issuers, TRS) catches it. A discovery-layer problem, mitigated not eliminated.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Dangling pointer / endpoint takeover</td>
+                <td class="py-2.5 pr-4 dns">A record points to a reclaimed host an attacker now controls.</td>
+                <td class="py-2.5 pr-4 partial">△ residual</td>
+                <td class="py-2.5 text-slate-700">The signed facts <em>legitimately</em> point to a now-compromised endpoint — the signature is valid, the host isn't. Mitigate with short TTLs, revocation, and agent re-publish/rotation.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Enumeration / zone-walking</td>
+                <td class="py-2.5 pr-4 dns">Scrape all records (DNSSEC NSEC walking).</td>
+                <td class="py-2.5 pr-4 partial">△ open question</td>
+                <td class="py-2.5 text-slate-700">The index can be intentionally <em>opaque</em> to prevent agent enumeration — but that trades against discoverability (paper §XI.B, unresolved).</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Surveillance of lookups</td>
+                <td class="py-2.5 pr-4 dns">Observers learn who asks for what (DoH/DoT only partial).</td>
+                <td class="py-2.5 pr-4 yes">✗ designed out</td>
+                <td class="py-2.5 text-slate-700">The privacy path (<code>PrivateFactsURL</code> via Tor/IPFS) hides the requester by design — something DNS only bolted on late.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-4">
+          <strong>The pattern:</strong> NANDA converts DNS's worst attacks — poisoning, spoofing, MITM, route-hijack —
+          from "silent compromise" into "detected and rejected," because forged bytes can't satisfy a signature.
+          What it <em>doesn't</em> magically fix is availability (DDoS), key custody, replay (bounded by TTL),
+          and naming/endpoint trust — those are managed with caching, HSMs, short TTLs, revocation, and trust policy.
+          A good answer in the room names both halves: what the crypto eliminates, and what still needs operational care.
         </p>
       </div>
     </section>
