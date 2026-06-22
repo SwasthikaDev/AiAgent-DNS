@@ -9,9 +9,7 @@ Ships with **two interfaces** on top of the same backend:
 - a **web UI** at `http://localhost:8000/ui/` — light, minimal, mobile-first, UX4G-aligned
 - a **CLI** (`python -m nanda.cli`) — the technical surface
 
-> **Going into an interview?** Read [`DEMO_GUIDE.md`](./DEMO_GUIDE.md) and [`VIDEO_SCRIPT.md`](./VIDEO_SCRIPT.md) first. [`ROADMAP.md`](./ROADMAP.md) is the 90-day-as-VP plan.
->
-> Build plan and explicit non-goals are in [`PLAN.md`](./PLAN.md).
+> Build plan and explicit non-goals are in [`PLAN.md`](./PLAN.md); [`ROADMAP.md`](./ROADMAP.md) sketches the first-90-days plan.
 
 Built for the Project NANDA / Agentic Net VP of Engineering challenge.
 
@@ -229,8 +227,6 @@ tests/test_crypto.py  Detached-sig + W3C VC roundtrip + tamper tests (7 total)
 fly.toml              Fly.io deploy config for the index + UI
 
 docs/                 Screenshots used in this README
-DEMO_GUIDE.md         Interview / demo script + Q&A prep
-VIDEO_SCRIPT.md       Pre-interview video script + production guide
 ROADMAP.md            First 90 days as VP of Engineering
 PLAN.md               Build plan with explicit non-goals
 ```
