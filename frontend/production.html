@@ -10,8 +10,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 
   <style type="text/tailwindcss">
+    .mermaid-box { @apply bg-slate-50 rounded-md border border-slate-200 p-4 md:p-6 overflow-x-auto flex justify-center my-4; }
+    .diagram-cap { @apply text-xs text-slate-500 text-center mb-4; }
     .card { @apply bg-white rounded-lg border border-slate-200 shadow-sm; }
     .card-padded { @apply p-5 md:p-7; }
     .sec-title { @apply text-lg font-semibold text-slate-900; }
@@ -70,6 +73,143 @@
         Legend: <span class="pill pill-scale">scale</span> <span class="pill pill-sec">security</span>
         <span class="pill pill-ops">ops</span>.
       </p>
+    </section>
+
+    <!-- ============== WORKED EXAMPLE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Worked example · capacity planning <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">Designing for 1 billion agents — the napkin math, then the architecture</h3>
+        <p class="sec-desc">
+          A concrete "design NANDA at scale" exercise. Assume after year one:
+          <strong>1 B agents</strong>, <strong>2 B users / integrations</strong>, each making
+          <strong>5 calls/day</strong>, plus agent registrations and updates. Estimate the load, then size each tier.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">1 · Back-of-envelope traffic</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Quantity</th><th class="py-2 pr-4">Math</th><th class="py-2">Result</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Resolutions / day</td><td class="py-2 pr-4 mono">2 B × 5</td><td class="py-2 text-slate-700">10 B / day</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Avg resolutions / sec</td><td class="py-2 pr-4 mono">10 B ÷ 86,400</td><td class="py-2 text-slate-700">≈ <strong>116 k/s</strong> average</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Peak (≈3× diurnal)</td><td class="py-2 pr-4 mono">116 k × 3</td><td class="py-2 text-slate-700">≈ <strong>350 k/s</strong> peak reads</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Origin reads after cache</td><td class="py-2 pr-4 mono">116 k × (1 − 0.95)</td><td class="py-2 text-slate-700">≈ <strong>6 k/s</strong> avg hit the index (95% edge-cache hit)</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">New registrations / sec</td><td class="py-2 pr-4 mono">1 B ÷ 1 yr</td><td class="py-2 text-slate-700">≈ <strong>32/s</strong> index writes</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Index pointer updates (key rotation, URL changes)</td><td class="py-2 pr-4 mono">~few/agent/yr</td><td class="py-2 text-slate-700">~hundreds/s — still small</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Facts/metadata updates</td><td class="py-2 pr-4 mono">~100 k/s</td><td class="py-2 text-slate-700"><strong>off the index</strong> — agents self-publish to facts hosting</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-3">
+          <strong>The headline:</strong> caching turns ~116 k/s of reads into only ~<strong>6 k/s at the origin</strong>
+          — a 20× reduction — and the heavy update traffic (~100 k/s) never touches the index because agents publish
+          metadata to facts hosts directly. <em>This is exactly why the paper keeps the index lean and pushes volatile
+          state out.</em>
+        </p>
+
+        <div class="mermaid-box">
+<pre class="mermaid">
+flowchart LR
+    U["User call<br/>~116k/s"] --> E{"Edge<br/>cache?"}
+    E -->|"95% hit"| H["served at edge<br/>(no origin load)"]
+    E -->|"~5% miss · ~6k/s"| I["Index shard"]
+    REG["Register agent<br/>~32/s"] --> I
+    UPD["Metadata update<br/>~100k/s"] --> F["Facts host /<br/>object store<br/>(off the index)"]
+    classDef c fill:#dbeafe,stroke:#1d4ed8,color:#0f172a
+    classDef o fill:#fee2e2,stroke:#dc2626,color:#0f172a
+    classDef off fill:#dcfce7,stroke:#059669,color:#0f172a
+    class H c
+    class I o
+    class F off
+</pre>
+        </div>
+        <p class="diagram-cap">Read vs write: ~95% of reads die at the edge; only ~6k/s reach the index; the ~100k/s of metadata updates bypass the index entirely.</p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">2 · Storage</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Data</th><th class="py-2 pr-4">Math</th><th class="py-2">Footprint</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Lean index</td><td class="py-2 pr-4 mono">1 B × ≤120 B</td><td class="py-2 text-slate-700">≈ <strong>120 GB</strong> raw → ~360 GB with 3× replication. <em>Fits in RAM across a modest cluster.</em></td></tr>
+              <tr><td class="py-2 pr-4 font-medium">AgentFacts (VCs)</td><td class="py-2 pr-4 mono">1 B × ~2 KB</td><td class="py-2 text-slate-700">≈ <strong>2 TB</strong> on object storage / CDN / IPFS — cheap, not on the index.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Revocation status</td><td class="py-2 pr-4 mono">1 B × tiny</td><td class="py-2 text-slate-700">a few GB in a fast replicated cache (Redis).</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Audit log</td><td class="py-2 pr-4 mono">sampled</td><td class="py-2 text-slate-700">huge if unsampled → sample + retention windows in a log/TSDB.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-3"><strong>Key realization:</strong> the index is only ~120 GB — <em>trivially small</em>. The lean ≤120 B record is what makes a trillion-agent index affordable. The bulk (facts) lives on commodity object storage, paid per-agent.</p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">3 · The architecture (request path, top to bottom)</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Global anycast + GeoDNS</strong> routes each client to the nearest region.</li>
+          <li><strong>CDN / edge cache</strong> serves signed AgentAddr + AgentFacts — absorbs ~95%+ of reads (safe, because they're signed).</li>
+          <li><strong>Regional L7 load balancers</strong> spread the remaining ~6 k/s across a <strong>stateless index-resolver fleet</strong> that autoscales on RPS.</li>
+          <li><strong>Sharded, replicated KV store</strong> (consistent hashing on <code>agent_id</code>) — e.g. 32–64 shards, 3 replicas each, multi-region read replicas. 6 k/s origin reads + ~hundreds/s writes is comfortable; far under the 10 k/s/shard target.</li>
+          <li><strong>Facts hosting</strong> = object storage + CDN (agent self-publishes); updates never hit the index.</li>
+          <li><strong>Adaptive-resolver fleet</strong> — stateless, at the edge / serverless, signs short-TTL routing tokens.</li>
+          <li><strong>VC-Status / revocation service</strong> — fast replicated cache + an event stream for sub-second global propagation.</li>
+          <li><strong>Async backbone (Kafka)</strong> — registrations, key rotations, revocations, telemetry flow as events; CDC fans them to replicas and triggers edge-cache invalidation.</li>
+          <li><strong>Observability</strong> — OpenTelemetry traces + metrics; append-only sampled audit log.</li>
+        </ul>
+
+        <div class="mermaid-box">
+<pre class="mermaid">
+flowchart TB
+    C["Client / Agent"] --> GEO["Anycast + GeoDNS<br/>nearest region"]
+    GEO --> EDGE["CDN / Edge cache<br/>~95% of reads"]
+    EDGE -->|"miss ~5%"| LB["Regional L7<br/>load balancer"]
+    LB --> RF["Stateless resolver fleet<br/>(autoscaled)"]
+    RF --> KV[("Sharded KV index<br/>32–64 shards · 3 replicas")]
+    RF --> AR["Adaptive resolver<br/>(signed tokens)"]
+    RF --> REV["VC-Status<br/>revocation cache"]
+    EDGE -. facts .-> OS[("Facts<br/>object store / CDN / IPFS")]
+    KV -. CDC .-> K[["Kafka backbone<br/>regs · rotations · revocations · telemetry"]]
+    K -. invalidate .-> EDGE
+    K -. propagate .-> REV
+    classDef e fill:#dbeafe,stroke:#1d4ed8,color:#0f172a
+    classDef s fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    class EDGE,GEO e
+    class KV,OS,REV s
+</pre>
+        </div>
+        <p class="diagram-cap">Scaled deployment: edge caching absorbs reads; an L7 load balancer fans the misses across a stateless resolver fleet over a sharded KV index; facts live off-index; an async backbone propagates updates/revocations and invalidates the edge.</p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">4 · Per-component scaling decisions</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Component</th><th class="py-2 pr-4">Scaling approach</th><th class="py-2">Why it works here</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">Load balancing</td><td class="py-2 pr-4 text-slate-600">Anycast + per-region L7 LBs, health-checked</td><td class="py-2 text-slate-700">Stateless resolvers → any node can serve any request; DDoS absorbed at the edge.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Caching</td><td class="py-2 pr-4 text-slate-600">client → CDN edge → regional → origin, TTL-tiered</td><td class="py-2 text-slate-700">95%+ hit ratio; signed objects are safe to cache on untrusted edges. Cuts latency AND origin load.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">DB (reads)</td><td class="py-2 pr-4 text-slate-600">Cross-region read replicas + cache</td><td class="py-2 text-slate-700">Read-heavy, point lookups; replicas serve locally for &lt;1 s.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">DB (writes)</td><td class="py-2 pr-4 text-slate-600">Horizontal sharding by <code>agent_id</code></td><td class="py-2 text-slate-700">Writes are low + naturally partitionable by key; add shards to add capacity linearly.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Metadata updates</td><td class="py-2 pr-4 text-slate-600">Decentralized self-publish + CRDT</td><td class="py-2 text-slate-700">The ~100 k/s of updates bypass the index entirely — the single biggest scaling win.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Compute (services)</td><td class="py-2 pr-4 text-slate-600">Stateless, autoscaled on CPU/RPS</td><td class="py-2 text-slate-700">No sticky state → scale out/in freely; spot-friendly.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="lead mt-4">
+          <strong>The punchline for the whiteboard:</strong> at 1 B agents this is <em>not</em> a storage problem
+          (~120 GB) and barely a write problem (~hundreds/s on the index) — it's a <strong>read-distribution and
+          freshness problem</strong>. Caching + sharded read replicas handle the reads; pushing metadata + revocation
+          off the index keeps writes tiny; the lean signed record is what makes all of it cheap. Everything below
+          expands on these levers.
+        </p>
+      </div>
     </section>
 
     <!-- ============== TARGETS ============== -->
@@ -453,6 +593,119 @@
       </div>
     </section>
 
+    <!-- ============== TTL DEEP DIVE ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">TTL · the caching control knob, in detail <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">TTL is the single dial that trades freshness against cost</h3>
+        <p class="sec-desc">
+          <strong>TTL (Time-To-Live)</strong> = how long a cached copy is treated as <em>fresh</em> before it must be
+          re-fetched or re-validated. It's the most important number in the whole caching story, so it's worth
+          understanding in full.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">How it works</p>
+        <p class="lead">
+          When any layer caches a signed object, it starts a timer set to that object's TTL. <strong>Within the TTL</strong>,
+          every request is answered from cache — fast, no origin hit. <strong>After the TTL</strong>, the entry is stale
+          and the next request triggers a re-fetch (or a revalidation). The TTL is <em>carried inside the signed object
+          itself</em>, so it can't be tampered with — the paper enforces that records are "resolved and cached only within
+          their TTL window" (§VII.E).
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">The three NANDA tiers — and why each value</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Layer</th><th class="py-2 pr-4">TTL</th><th class="py-2">Why that length</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 font-medium">AgentAddr (index)</td><td class="py-2 pr-4 mono">1–6 h</td><td class="py-2 text-slate-700">Identity + pointers are <em>stable</em> → cache long, spare the index.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">AgentFacts (metadata)</td><td class="py-2 pr-4 mono">5–15 m</td><td class="py-2 text-slate-700">Capabilities/endpoints change more often → medium freshness.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Routing token (endpoint)</td><td class="py-2 pr-4 mono">30–60 s</td><td class="py-2 text-slate-700">Endpoints move every few seconds → very short, near-real-time.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">The core trade-off</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Long TTL</strong> → fewer lookups, lower origin load, lower latency on a hit — <em>but</em> a longer staleness window: a change (or a revoked credential) can linger up to one TTL.</li>
+          <li><strong>Short TTL</strong> → fresher data, faster propagation — <em>but</em> more re-resolution, more origin traffic, higher cost.</li>
+          <li><strong>The rule of thumb:</strong> <code>worst-case staleness ≈ TTL</code>, and <code>propagation time ≈ TTL</code>. You're literally choosing how stale you tolerate.</li>
+        </ul>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">The details that matter in practice</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>TTL is your consistency knob (CAP tie-in).</strong> Shorter TTL = closer to strong consistency, at higher cost; longer TTL = more eventual. It's how you dial the AP/CP balance per object.</li>
+          <li><strong>Layered TTLs compound.</strong> Each tier has its own TTL; effective freshness is the <em>shortest relevant one</em>. Advice from the paper: set cache expiry <em>shorter than the weakest credential's TTL</em> (§VII.D).</li>
+          <li><strong>Revocation beats TTL when you can't wait.</strong> TTL alone can't do sub-second — for "kill it now," a VC-Status list invalidates ahead of expiry. TTL bounds the <em>default</em> staleness; revocation handles emergencies.</li>
+          <li><strong>Tune by criticality (§V.E).</strong> A healthcare or financial agent gets short TTLs (fresher, safer); a demo agent gets long TTLs (cheaper). Per-agent, per-trust-zone.</li>
+          <li><strong>Negative / error caching.</strong> Cache "not found" and failures with a <em>short</em> TTL too (like DNS caches NXDOMAIN) so a missing name doesn't hammer the origin on every retry.</li>
+          <li><strong>stale-while-revalidate.</strong> Serve the slightly-stale copy <em>immediately</em> while fetching a fresh one in the background — hides the re-fetch latency at expiry and smooths load.</li>
+          <li><strong>TTL jitter.</strong> Add randomness so many cached entries don't expire at the same instant — prevents a synchronized <em>cache stampede</em> hammering the origin.</li>
+          <li><strong>Open question (§XI.E):</strong> <em>who</em> sets the TTL — the agent, the registry, the credential authority, or a policy engine? And can TTLs be <em>ephemeral / task-conditioned</em> (tied to a session or mission)? Unresolved in the paper.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============== HIERARCHY / DELEGATION ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Hierarchical delegation · the DNS model, applied <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">How DNS scales by delegation — and how NANDA borrows it</h3>
+        <p class="sec-desc">
+          DNS serves ~10 B lookups/day for a reason: <strong>no single server knows everything.</strong> Authority is
+          delegated down a hierarchy, each level independently operated, replicated, and cached. NANDA's "quilt" is the
+          same idea — and it's the key to distributing load, governance, and trust at agent scale.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">The DNS hierarchy (how a name resolves)</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Root servers (<code>.</code>)</strong> — know only where the TLD servers are. Tiny dataset, 13 "letters" → thousands of anycast instances, cached everywhere.</li>
+          <li><strong>TLD servers (<code>.com</code>, <code>.org</code>, <code>.in</code>)</strong> — know which authoritative server owns each SLD under them.</li>
+          <li><strong>Authoritative / SLD (<code>example.com</code>)</strong> — actually holds the records (A, MX, …).</li>
+          <li><strong>Recursive resolver</strong> (your ISP / <code>8.8.8.8</code>) — walks root → TLD → authoritative <em>once</em>, then <strong>caches</strong> so it rarely has to again.</li>
+        </ul>
+        <p class="lead mt-2">
+          Why this scales: each level is small and cacheable; load and authority are <strong>partitioned by name</strong>;
+          the heavily-hit root holds almost nothing. Adding a new domain never touches the root.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">The NANDA equivalent</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">DNS</th><th class="py-2 pr-4">NANDA analog</th><th class="py-2">Role</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-2 pr-4 mono">root / TLD</td><td class="py-2 pr-4 text-slate-700">the federated <strong>quilt</strong> of indexes (§IV.C)</td><td class="py-2 text-slate-700">point to which registry owns a namespace, by sector / jurisdiction.</td></tr>
+              <tr><td class="py-2 pr-4 mono">TLD → SLD delegation</td><td class="py-2 pr-4 text-slate-700"><strong>enterprise-registry routing</strong> (Table 1: <code>@company</code>)</td><td class="py-2 text-slate-700">the index holds a <em>redirect</em>; the company's own registry resolves the agent.</td></tr>
+              <tr><td class="py-2 pr-4 mono">authoritative records</td><td class="py-2 pr-4 text-slate-700">the <strong>AgentAddr / AgentFacts</strong></td><td class="py-2 text-slate-700">the actual signed identity + metadata.</td></tr>
+              <tr><td class="py-2 pr-4 mono">recursive resolver</td><td class="py-2 pr-4 text-slate-700">the <strong>client + caching layer + adaptive resolver</strong></td><td class="py-2 text-slate-700">walks the chain once, caches, reuses.</td></tr>
+              <tr><td class="py-2 pr-4 mono">hierarchical names<br/>(<code>sld.tld</code>)</td><td class="py-2 pr-4 text-slate-700">hierarchical URNs<br/>(<code>urn:agent:salesforce:translator</code>)</td><td class="py-2 text-slate-700">the namespace structure <em>is</em> the delegation path.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-3">
+          So a resolution can be <strong>multi-hop</strong>: <code>AgentName → NANDA index → enterprise registry →
+          AgentFacts</code> (the paper's "Enterprise Registry Resolution" path, §IV.A). The index need not know every
+          agent — it delegates, exactly like the DNS root.
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Why delegation is a scaling superpower</p>
+        <ul class="lead list-disc pl-5">
+          <li><strong>Distributes write load</strong> — each org registers/updates its own agents in its own registry; no central write bottleneck (ties to the ~100 k/s of updates staying off the root index).</li>
+          <li><strong>Distributes governance &amp; liability</strong> — each zone sets its own policy, credential schemas, and revocation (§VII.B trust zones), with cross-signing between them.</li>
+          <li><strong>Independent scaling &amp; failure isolation</strong> — a busy or broken enterprise registry doesn't take down the root or other zones.</li>
+          <li><strong>Keeps the root lean &amp; cacheable</strong> — like DNS, the most-hit tier holds the least, so it caches beautifully and rarely changes.</li>
+        </ul>
+      </div>
+    </section>
+
     <!-- ============== PROXY SERVERS ============== -->
     <section>
       <div class="card card-padded">
@@ -652,5 +905,23 @@
       </p>
     </footer>
   </main>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        fontFamily: "'Open Sans', system-ui, sans-serif",
+        fontSize: "13px",
+        primaryColor: "#dbeafe",
+        primaryTextColor: "#0f172a",
+        primaryBorderColor: "#1d4ed8",
+        lineColor: "#475569",
+        secondaryColor: "#ede9fe",
+        tertiaryColor: "#d1fae5",
+      },
+      flowchart: { useMaxWidth: false, curve: "basis", padding: 16, nodeSpacing: 45, rankSpacing: 55 },
+    });
+  </script>
 </body>
 </html>
