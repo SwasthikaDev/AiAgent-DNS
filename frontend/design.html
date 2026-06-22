@@ -38,7 +38,7 @@
     .key-pill.agt  { @apply bg-violet-100 text-violet-800; }
     .key-pill.res  { @apply bg-amber-100 text-amber-800; }
   </style>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
 
@@ -165,7 +165,7 @@ sequenceDiagram
         </div>
 
         <p class="text-xs text-slate-500 mt-4 leading-relaxed">
-          Neither the index nor the facts host is asked to vouch for itself. Both verifications happen
+          <span class="tp">Neither the index nor the facts host is asked to vouch for itself.</span> Both verifications happen
           in the client (browser uses TweetNaCl, CLI uses PyNaCl) — same Ed25519 primitive over the same
           RFC 8785 canonical JSON. If anyone tampers with the endpoint URL, the chain breaks and the
           flight booking call is refused before it leaves the client.
@@ -492,7 +492,7 @@ flowchart TB
         <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Rationale</p>
         <h3 class="diagram-title">Why it's built this way · the decisions behind the diagrams</h3>
         <p class="diagram-desc">
-          The whole architecture follows from one idea: <strong>split identity from metadata</strong>, so the
+          The whole architecture follows from one idea: <span class="tp">split identity from metadata</span>, so the
           index can stay tiny and rarely-written while everything volatile lives in documents that can be
           re-published at any moment <em>without touching the index</em>. DNS bundles the two and updates in
           minutes-to-hours; at trillions of agents that move every few seconds, that breaks. Separating them

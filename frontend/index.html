@@ -156,7 +156,7 @@
       @apply rounded-md border border-amber-200 bg-amber-50 text-amber-900 text-sm p-4;
     }
   </style>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
   <!-- Skip link for accessibility (UX4G WCAG alignment) -->
@@ -193,7 +193,7 @@
         <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">AgentFacts</code>,
         verifies both signatures in the browser using
         <span class="text-slate-800 font-medium">Ed25519</span>, and only then
-        calls the endpoint. Every check below is real.
+        calls the endpoint. <span class="tp">Every check below is real.</span>
       </p>
     </section>
 
@@ -300,7 +300,7 @@
       <p class="section-eyebrow">Call an agent</p>
       <h3 class="section-title">Resolve, verify, then send</h3>
       <p class="section-desc">
-        We re-run the full resolution chain before every call. Toggle
+        <span class="tp">We re-run the full resolution chain before every call.</span> Toggle
         <em>Adaptive routing</em> to dispatch through the §VI Adaptive Resolver
         instead of the static endpoint — you'll see a signed routing token
         verified before the agent is hit.
@@ -376,7 +376,7 @@
         Every signed object carries a <strong>TTL</strong> — a cache lifetime. Within it, the object is reused from
         cache; once it expires, the client must re-fetch. These are the <em>real</em> TTLs: the 60-second
         <strong>routing token</strong> expires while you watch, while the AgentAddr (1&nbsp;h) and AgentFacts (5&nbsp;m)
-        tick down but outlast the demo — <strong>short-lived endpoints, long-lived identity</strong>.
+        tick down but outlast the demo — <span class="tp">short-lived endpoints, long-lived identity</span>.
       </p>
 
       <div class="card card-padded mt-4">

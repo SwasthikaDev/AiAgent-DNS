@@ -36,7 +36,7 @@
     .why { @apply text-xs text-slate-500 mt-1; }
     li { @apply mb-1.5; }
   </style>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
 
@@ -106,7 +106,7 @@
           </table>
         </div>
         <p class="lead mt-3">
-          <strong>The headline:</strong> caching turns ~116 k/s of reads into only ~<strong>6 k/s at the origin</strong>
+          <strong>The headline:</strong> <span class="tp">caching turns ~116 k/s of reads into only ~6 k/s at the origin</span>
           — a 20× reduction — and the heavy update traffic (~100 k/s) never touches the index because agents publish
           metadata to facts hosts directly. <em>This is exactly why the paper keeps the index lean and pushes volatile
           state out.</em>
@@ -142,7 +142,7 @@ flowchart LR
               <tr><td class="py-2 pr-4 font-medium">Lean index</td><td class="py-2 pr-4 mono">1 B × ≤120 B</td><td class="py-2 text-slate-700">≈ <strong>120 GB</strong> raw → ~360 GB with 3× replication. <em>Fits in RAM across a modest cluster.</em></td></tr>
               <tr><td class="py-2 pr-4 font-medium">AgentFacts (VCs)</td><td class="py-2 pr-4 mono">1 B × ~2 KB</td><td class="py-2 text-slate-700">≈ <strong>2 TB</strong> on object storage / CDN / IPFS — cheap, not on the index.</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Revocation status</td><td class="py-2 pr-4 mono">1 B × tiny</td><td class="py-2 text-slate-700">a few GB in a fast replicated cache (Redis).</td></tr>
-              <tr><td class="py-2 pr-4 font-medium">Audit log</td><td class="py-2 pr-4 mono">sampled</td><td class="py-2 text-slate-700">huge if unsampled → sample + retention windows in a log/TSDB.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Audit log</td><td class="py-2 pr-4 mono">sampled</td><td class="py-2 text-slate-700">huge if unsampled → sample + retention windows in a log / TSDB (time-series database).</td></tr>
             </tbody>
           </table>
         </div>
@@ -150,14 +150,14 @@ flowchart LR
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">3 · The architecture (request path, top to bottom)</p>
         <ul class="lead list-disc pl-5">
-          <li><strong>Global anycast + GeoDNS</strong> routes each client to the nearest region.</li>
-          <li><strong>CDN / edge cache</strong> serves signed AgentAddr + AgentFacts — absorbs ~95%+ of reads (safe, because they're signed).</li>
-          <li><strong>Regional L7 load balancers</strong> spread the remaining ~6 k/s across a <strong>stateless index-resolver fleet</strong> that autoscales on RPS.</li>
-          <li><strong>Sharded, replicated KV store</strong> (consistent hashing on <code>agent_id</code>) — e.g. 32–64 shards, 3 replicas each, multi-region read replicas. 6 k/s origin reads + ~hundreds/s writes is comfortable; far under the 10 k/s/shard target.</li>
+          <li><strong>Global anycast + GeoDNS (geographic DNS routing)</strong> routes each client to the nearest region.</li>
+          <li><strong>CDN (Content Delivery Network) / edge cache</strong> serves signed AgentAddr + AgentFacts — absorbs ~95%+ of reads (safe, because they're signed).</li>
+          <li><strong>Regional L7 (Layer 7 / application-layer) load balancers</strong> spread the remaining ~6 k/s across a <strong>stateless index-resolver fleet</strong> that autoscales on RPS (requests per second).</li>
+          <li><strong>Sharded, replicated KV (key-value) store</strong> (consistent hashing on <code>agent_id</code>) — e.g. 32–64 shards, 3 replicas each, multi-region read replicas. 6 k/s origin reads + ~hundreds/s writes is comfortable; far under the 10 k/s/shard target.</li>
           <li><strong>Facts hosting</strong> = object storage + CDN (agent self-publishes); updates never hit the index.</li>
           <li><strong>Adaptive-resolver fleet</strong> — stateless, at the edge / serverless, signs short-TTL routing tokens.</li>
           <li><strong>VC-Status / revocation service</strong> — fast replicated cache + an event stream for sub-second global propagation.</li>
-          <li><strong>Async backbone (Kafka)</strong> — registrations, key rotations, revocations, telemetry flow as events; CDC fans them to replicas and triggers edge-cache invalidation.</li>
+          <li><strong>Async backbone (Kafka)</strong> — registrations, key rotations, revocations, telemetry flow as events; CDC (Change Data Capture) fans them to replicas and triggers edge-cache invalidation.</li>
           <li><strong>Observability</strong> — OpenTelemetry traces + metrics; append-only sampled audit log.</li>
         </ul>
 
@@ -315,7 +315,7 @@ flowchart TB
         <ul class="lead list-disc pl-5">
           <li><strong>Replication</strong> across regions (leader-follower or multi-leader) so reads are served locally — the &lt;1 s target is mostly a data-locality problem.</li>
           <li><strong>Event streaming + Change Data Capture</strong> (Kafka): registrations, key rotations, and <strong>revocations propagate</strong> as events to every edge cache and replica.</li>
-          <li><strong>CRDT-based async updates</strong> (the paper's update protocol): conflict-free metadata revision across replicas without coordination — agents publish independently.</li>
+          <li><strong>CRDT (Conflict-free Replicated Data Type)-based async updates</strong> (the paper's update protocol): conflict-free metadata revision across replicas without coordination — agents publish independently.</li>
           <li><strong>Anti-entropy / gossip</strong> to reconcile replicas; accept <strong>eventual consistency</strong> bounded by TTL.</li>
         </ul>
 
@@ -357,7 +357,7 @@ flowchart TB
         <p class="lead mt-4">
           <strong>The key insight:</strong> NANDA can choose AP for resolution <em>because</em> its records are
           <strong>signed</strong> (a stale answer can't be a forged answer) and <strong>TTL-bounded</strong>
-          (staleness is capped). Cryptography is what makes eventual consistency safe here — that's the whole reason
+          (staleness is capped). <span class="tp">Cryptography is what makes eventual consistency safe here</span> — that's the whole reason
           the paper signs everything and scopes it with TTLs.
         </p>
         <p class="why">
@@ -431,7 +431,7 @@ flowchart TB
             </thead>
             <tbody class="divide-y divide-slate-100">
               <tr><td class="py-2 pr-4 font-medium">Lean index (KV)</td><td class="py-2 pr-4 text-slate-600">Cross-region replicas + periodic snapshots + point-in-time recovery</td><td class="py-2 text-slate-700">RPO≈0, RTO low — it's the anchor; losing it stops all resolution.</td></tr>
-              <tr><td class="py-2 pr-4 font-medium">Signing keys</td><td class="py-2 pr-4 text-slate-600">KMS/HSM with managed durability + recovery; publish key history</td><td class="py-2 text-slate-700">Never lose; never expose. Old objects must still verify after rotation.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Signing keys</td><td class="py-2 pr-4 text-slate-600">KMS (Key Management Service) / HSM (Hardware Security Module) with managed durability + recovery; publish key history</td><td class="py-2 text-slate-700">Never lose; never expose. Old objects must still verify after rotation.</td></tr>
               <tr><td class="py-2 pr-4 font-medium">AgentFacts</td><td class="py-2 pr-4 text-slate-600">Object versioning / content-addressed (IPFS); agents can re-publish</td><td class="py-2 text-slate-700">Self-healing — the agent owns the source of truth, so loss is recoverable.</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Audit log</td><td class="py-2 pr-4 text-slate-600">Append-only, immutable, replicated</td><td class="py-2 text-slate-700">RPO≈0 — compliance can't tolerate gaps.</td></tr>
             </tbody>
@@ -457,7 +457,7 @@ flowchart TB
         <p class="lead mt-3">
           <strong>The architectural win:</strong> signed + TTL-bounded + cacheable + decentralized-facts means NANDA is
           <em>inherently</em> resilient — much of the demo's design (sign everything, cache freely, agents own their facts)
-          is exactly what makes graceful degradation possible. The crypto isn't just security; it's availability.
+          is exactly what makes graceful degradation possible. <span class="tp">The crypto isn't just security; it's availability.</span>
         </p>
       </div>
     </section>
@@ -562,7 +562,7 @@ flowchart TB
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">What a CDN buys you</p>
         <ul class="lead list-disc pl-5">
-          <li><strong>Latency</strong> — content served from a PoP geographically near the user (the &lt;1 s lever).</li>
+          <li><strong>Latency</strong> — content served from a PoP (Point of Presence — an edge server location) geographically near the user (the &lt;1 s lever).</li>
           <li><strong>Throughput</strong> — origin offload: a 95% cache-hit ratio means the origin sees ~1/20th the traffic.</li>
           <li><strong>Availability</strong> — the edge keeps serving cached (signed, within-TTL) objects <em>even if the origin is down</em> → graceful degradation.</li>
           <li><strong>DDoS absorption</strong> — the CDN's capacity soaks up floods before they reach your origin (the lesson from the 2016 Dyn outage).</li>
@@ -664,7 +664,7 @@ flowchart TB
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">The DNS hierarchy (how a name resolves)</p>
         <ul class="lead list-disc pl-5">
           <li><strong>Root servers (<code>.</code>)</strong> — know only where the TLD servers are. Tiny dataset, 13 "letters" → thousands of anycast instances, cached everywhere.</li>
-          <li><strong>TLD servers (<code>.com</code>, <code>.org</code>, <code>.in</code>)</strong> — know which authoritative server owns each SLD under them.</li>
+          <li><strong>TLD servers (<code>.com</code>, <code>.org</code>, <code>.in</code>)</strong> — know which authoritative server owns each SLD (Second-Level Domain) under them.</li>
           <li><strong>Authoritative / SLD (<code>example.com</code>)</strong> — actually holds the records (A, MX, …).</li>
           <li><strong>Recursive resolver</strong> (your ISP / <code>8.8.8.8</code>) — walks root → TLD → authoritative <em>once</em>, then <strong>caches</strong> so it rarely has to again.</li>
         </ul>
@@ -750,11 +750,11 @@ flowchart TB
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Reverse proxy → fronting the services</p>
         <p class="lead">
-          Every service should sit behind a reverse proxy / API gateway that handles <strong>TLS termination,
+          Every service should sit behind a reverse proxy / API gateway that handles <strong>TLS (Transport Layer Security) termination,
           load balancing</strong> across replicas, <strong>rate-limiting</strong> (the <code>/register</code>
           protection), request routing, and <strong>DDoS shielding</strong> — the paper points to Envoy/NGINX for the
           adaptive resolver, and a <strong>CDN is just a globally-distributed reverse-proxy cache</strong> (the caching
-          section above). It's also the natural place to enforce <strong>mTLS between services</strong>, centralise
+          section above). It's also the natural place to enforce <strong>mTLS (mutual TLS — both sides authenticate) between services</strong>, centralise
           auth, and emit per-request telemetry, since every request flows through it — one clean control point.
         </p>
       </div>

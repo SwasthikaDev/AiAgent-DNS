@@ -46,7 +46,7 @@
     .cm { @apply text-slate-400; }
     .kw { @apply text-sky-300; }
   </style>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
 
@@ -79,7 +79,7 @@
         Six parts: a <strong>map of the repo</strong>, a <strong>FastAPI primer</strong> (for Django folks),
         a <strong>step-by-step trace</strong> of the functions that fire when you resolve and call an agent,
         a <strong>function reference</strong>, an honest <strong>implemented-vs-paper</strong> table, and the
-        <strong>CLI commands</strong>. The signing/verifying core is one small file
+        <strong>CLI commands</strong>. <span class="tp">The signing/verifying core is one small file</span>
         (<span class="file">nanda/crypto.py</span>); everything else is plumbing around it.
       </p>
     </section>
@@ -229,7 +229,7 @@
 
         <p class="text-xs text-slate-500 mt-4 leading-relaxed">
           The mental shift that pays off: in Django you reach <em>into</em> a request object and write
-          <em>out</em> through a serializer; in FastAPI the function <strong>signature is the contract</strong> —
+          <em>out</em> through a serializer; in FastAPI the function <span class="tp">signature is the contract</span> —
           typed inputs come in as arguments, the typed return goes out as JSON, and <span class="mono">/docs</span>
           documents it automatically.
         </p>

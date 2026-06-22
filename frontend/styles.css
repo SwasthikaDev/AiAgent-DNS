@@ -76,6 +76,17 @@ select.form-input {
   font-weight: 600;
 }
 
+/* Talking-point highlight — key lines to call out during the walkthrough.
+   Looks like a marker highlight; used via <span class="tp">…</span>. */
+.tp {
+  background-color: #fde68a;
+  border-radius: 3px;
+  padding: 0.05em 0.28em;
+  font-weight: 500;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /* Scrollbar polish. */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #f1f5f9; }
