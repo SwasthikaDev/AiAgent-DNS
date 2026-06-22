@@ -24,3 +24,6 @@ data/
 
 # Demo screen recordings (generated locally by scripts/record_demo.py)
 recordings/
+
+# Private interview-prep notes (local only, never pushed)
+.interview-prep/
