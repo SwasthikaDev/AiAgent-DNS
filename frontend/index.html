@@ -187,13 +187,13 @@
         A signed metadata chain for discovering and trusting AI agents.
       </h2>
       <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
-        The client resolves an agent name, follows it to a signed
+        The client resolves an agent name to a signed
         <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">AgentAddr</code>
-        from the index, fetches the agent's signed
-        <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">AgentFacts</code>,
-        verifies both signatures in the browser using
-        <span class="text-slate-800 font-medium">Ed25519</span>, and only then
-        calls the endpoint. <span class="tp">Every check below is real.</span>
+        (address record) from the index, then fetches the agent's signed
+        <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded">AgentFacts</code>
+        (capability/facts document). It verifies both signatures in the browser
+        using <span class="text-slate-800 font-medium">Ed25519</span> (a signature
+        scheme) before calling the endpoint. <span class="tp">Every check below is real.</span>
       </p>
     </section>
 
@@ -202,7 +202,7 @@
       <div class="flex items-end justify-between gap-4 flex-wrap mb-2">
         <div>
           <p class="section-eyebrow">Architecture</p>
-          <h3 class="section-title">Three tiers, one chain of custody</h3>
+          <h3 class="section-title">Three tiers, one verified trust chain</h3>
         </div>
         <div class="flex gap-2 flex-wrap">
           <a href="code.html" class="btn-secondary whitespace-nowrap" title="How the code is structured and how a call routes through it">
@@ -236,7 +236,7 @@
           <p class="tier-eyebrow text-violet-700">Tier 2 · Metadata</p>
           <h4 class="tier-title">AgentFacts Hosts</h4>
           <p class="tier-desc">
-            Stores signed JSON-LD documents with capabilities, skills and
+            Stores signed JSON documents (in JSON-LD format) with capabilities, skills and
             endpoints. Two flavors: agent-owned (primary) and third-party
             (private).
           </p>
@@ -260,12 +260,12 @@
       <div class="flex items-end justify-between gap-4 flex-wrap mb-2">
         <div>
           <p class="section-eyebrow">Registered agents</p>
-          <h3 class="section-title">The "quilt" model in three demo records</h3>
+          <h3 class="section-title">Three agents, three ways to register and route</h3>
           <p class="section-desc">
             <code class="text-xs">echo</code> uses an agent-owned facts host,
             <code class="text-xs">translate</code> delegates to a third-party host (the privacy path), and
             <code class="text-xs">multiregion</code> adds an adaptive resolver — three registration / routing
-            styles from the paper.
+            styles from the paper (the paper's "quilt" model).
           </p>
         </div>
         <button id="refreshBtn" class="btn-secondary btn-sm">Refresh</button>
@@ -285,8 +285,8 @@
       <h3 class="section-title">Walk the chain · verify in the browser</h3>
       <p class="section-desc">
         Click <em>Resolve</em> on any agent above. Each step runs a real HTTP
-        fetch and a real Ed25519 verification — no server is asked to vouch
-        for itself.
+        fetch and a real Ed25519 verification — the browser verifies the
+        cryptography itself, instead of trusting a server that just says "this is valid."
       </p>
       <div id="resolutionPanel" class="card card-padded min-h-[180px] mt-4">
         <p class="text-sm text-slate-500 text-center py-10">
@@ -301,9 +301,10 @@
       <h3 class="section-title">Resolve, verify, then send</h3>
       <p class="section-desc">
         <span class="tp">We re-run the full resolution chain before every call.</span> Toggle
-        <em>Adaptive routing</em> to dispatch through the §VI Adaptive Resolver
-        instead of the static endpoint — you'll see a signed routing token
-        verified before the agent is hit.
+        <em>Adaptive routing</em> to dispatch through a resolver that picks an
+        endpoint at call time (Adaptive Resolver, from §VI of the paper) instead
+        of the static endpoint — you'll see a signed routing token verified
+        before the agent is hit.
       </p>
 
       <div class="card card-padded mt-4">
@@ -324,7 +325,7 @@
         <div class="mt-4 flex flex-wrap items-center gap-4">
           <label class="inline-flex items-center gap-2 text-sm text-slate-700">
             <input id="adaptiveToggle" type="checkbox" class="rounded border-slate-300" />
-            <span>Use Adaptive Resolver (§VI)</span>
+            <span>Use Adaptive Resolver (picks endpoint at call time)</span>
           </label>
           <div class="flex items-center gap-2 text-sm">
             <label for="regionSelect" class="text-slate-600">Routing:</label>
@@ -345,9 +346,11 @@
       <p class="section-eyebrow text-red-700">Security demo</p>
       <h3 class="section-title">Tamper detection</h3>
       <p class="section-desc">
-        Simulates a man-in-the-middle swapping the endpoint URL inside a signed
-        <code class="text-xs">AgentFacts</code> document. The client must reject the
-        mutated version.
+        Simulates a man-in-the-middle swapping the endpoint URL <strong>inside the signed
+        <code class="text-xs">AgentFacts</code></strong> — the agent's capability document,
+        <strong>not the <code class="text-xs">AgentAddr</code></strong>. The client re-verifies the
+        AgentFacts with the <strong>agent's</strong> public key and rejects the mutated version.
+        (The AgentAddr is a separate object, verified earlier with the <em>index's</em> key.)
       </p>
 
       <div class="card card-padded mt-4">
@@ -355,8 +358,8 @@
           <div>
             <p class="font-semibold text-slate-900">Simulate man-in-the-middle attack</p>
             <p class="text-sm text-slate-600 mt-1">
-              Fetches a real signed document, mutates one field, re-runs the
-              verifier.
+              Fetches the real signed <strong>AgentFacts</strong>, mutates one field (the endpoint),
+              and re-runs the <strong>AgentFacts</strong> verifier with the agent's key.
             </p>
           </div>
           <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
@@ -373,16 +376,16 @@
       <p class="section-eyebrow text-blue-700">Caching demo</p>
       <h3 class="section-title">TTL &amp; cache expiry</h3>
       <p class="section-desc">
-        Every signed object carries a <strong>TTL</strong> — a cache lifetime. Within it, the object is reused from
-        cache; once it expires, the client must re-fetch. These are the <em>real</em> TTLs: the 60-second
-        <strong>routing token</strong> expires while you watch, while the AgentAddr (1&nbsp;h) and AgentFacts (5&nbsp;m)
+        Every signed object carries a <strong>TTL</strong> (time-to-live) — a cache lifetime. Within it, the object is reused from
+        cache; once it expires, the client must re-fetch. These are the <em>real</em> TTLs. The 60-second
+        <strong>routing token</strong> expires while you watch. The AgentAddr (1&nbsp;h) and AgentFacts (5&nbsp;m)
         tick down but outlast the demo — <span class="tp">short-lived endpoints, long-lived identity</span>.
       </p>
 
       <div class="card card-padded mt-4">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <p class="text-sm text-slate-600">
-            Caches the <span class="font-mono text-xs">multiregion</span> agent's AgentAddr, AgentFacts VC, and a
+            Caches the <span class="font-mono text-xs">multiregion</span> agent's AgentAddr, facts document (a verifiable credential), and a
             routing token, then counts each TTL down live.
           </p>
           <button id="ttlBtn" class="btn-primary whitespace-nowrap">Run TTL demo</button>

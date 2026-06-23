@@ -712,7 +712,7 @@ $("#tamperBtn").addEventListener("click", async () => {
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <section class="border border-slate-200 rounded-md p-4 bg-white">
         <div class="flex items-center justify-between mb-2">
-          <p class="text-xs uppercase tracking-widest font-semibold text-slate-700">Step 1 · Original signed VC</p>
+          <p class="text-xs uppercase tracking-widest font-semibold text-slate-700">Step 1 · Original signed AgentFacts</p>
           <span class="badge-result ${originallyValid ? "ok" : "fail"}">${originallyValid ? "valid" : "failed"}</span>
         </div>
         <div class="diff-row before">"credentialSubject.endpoints.static[0]": "${originalEndpoint}"</div>
@@ -725,7 +725,7 @@ $("#tamperBtn").addEventListener("click", async () => {
 
       <section class="border border-red-200 rounded-md p-4 bg-red-50/50">
         <div class="flex items-center justify-between mb-2">
-          <p class="text-xs uppercase tracking-widest font-semibold text-red-700">Step 2 · After MITM tampering</p>
+          <p class="text-xs uppercase tracking-widest font-semibold text-red-700">Step 2 · AgentFacts after MITM tampering</p>
           <span class="badge-result ${tamperedValid ? "ok" : "fail"}">${tamperedValid ? "valid (BUG)" : "invalid"}</span>
         </div>
         <div class="diff-row after-removed">"endpoints.static[0]": "${originalEndpoint}"</div>
@@ -742,8 +742,8 @@ $("#tamperBtn").addEventListener("click", async () => {
       <span class="badge-result fail">rejected</span>
       <div class="text-sm leading-relaxed min-w-0 flex-1">
         <strong>Client refused the call.</strong>
-        An attacker can mutate any field inside the W3C VC's
-        <code>credentialSubject</code>, but cannot forge a new
+        An attacker can mutate any field inside the <strong>AgentFacts</strong> (the W3C Verifiable
+        Credential's <code>credentialSubject</code>), but cannot forge a new
         <code>DataIntegrityProof</code> (cryptosuite <code>eddsa-jcs-2022</code>)
         without the agent's private key. The client strips
         <code>proof</code>, re-canonicalises via RFC 8785 JCS, runs Ed25519

@@ -108,7 +108,7 @@
               <tr><td class="py-2 pr-4 mono">8002</td><td class="py-2 pr-4">facts-private</td><td class="py-2 text-slate-700">Third-party facts host (PrivateFactsURL — the privacy path).</td></tr>
               <tr><td class="py-2 pr-4 mono">8010</td><td class="py-2 pr-4">agent-echo</td><td class="py-2 text-slate-700">Sample agent — echoes input.</td></tr>
               <tr><td class="py-2 pr-4 mono">8011</td><td class="py-2 pr-4">agent-translate</td><td class="py-2 text-slate-700">Sample agent — mock translator (uppercases).</td></tr>
-              <tr><td class="py-2 pr-4 mono">8020</td><td class="py-2 pr-4">adaptive-resolver</td><td class="py-2 text-slate-700">§VI dispatcher — signed, TTL-scoped routing tokens.</td></tr>
+              <tr><td class="py-2 pr-4 mono">8020</td><td class="py-2 pr-4">adaptive-resolver</td><td class="py-2 text-slate-700">Adaptive dispatcher (paper §VI) — hands back short-lived, signed routing tokens that expire after a set time (TTL).</td></tr>
             </tbody>
           </table>
         </div>
@@ -128,14 +128,14 @@
         <h3 class="sec-title">What file holds what</h3>
         <p class="sec-desc">
           Three layers: a shared library (<span class="file">nanda/</span>), the six FastAPI services
-          (<span class="file">services/</span>), and the no-build web UI (<span class="file">frontend/</span>).
+          (<span class="file">services/</span>), and the web UI (<span class="file">frontend/</span>) — plain HTML and JavaScript that runs directly in the browser with no build or bundling step.
         </p>
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">Shared library — <span class="file">nanda/</span></p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <tbody class="divide-y divide-slate-100">
-              <tr><td class="py-2 pr-4 w-64"><span class="file">crypto.py</span></td><td class="py-2 text-slate-700">The heart. Ed25519 + JCS canonical JSON. <span class="pill-fn pill">canonicalize</span> <span class="pill-fn pill">sign_payload</span> <span class="pill-fn pill">verify_payload</span> (AgentAddr), <span class="pill-fn pill">sign_vc_payload</span> <span class="pill-fn pill">verify_vc</span> (W3C VC), <span class="pill-fn pill">pubkey_to_did_key</span> <span class="pill-fn pill">verify_vc_via_did</span> (did:key).</td></tr>
+              <tr><td class="py-2 pr-4 w-64"><span class="file">crypto.py</span></td><td class="py-2 text-slate-700">The heart. Ed25519 + JCS (JSON Canonicalization Scheme — one fixed byte layout so both sides hash the same thing) canonical JSON. <span class="pill-fn pill">canonicalize</span> <span class="pill-fn pill">sign_payload</span> <span class="pill-fn pill">verify_payload</span> (AgentAddr), <span class="pill-fn pill">sign_vc_payload</span> <span class="pill-fn pill">verify_vc</span> (W3C VC), <span class="pill-fn pill">pubkey_to_did_key</span> <span class="pill-fn pill">verify_vc_via_did</span> (did:key).</td></tr>
               <tr><td class="py-2 pr-4"><span class="file">schemas.py</span></td><td class="py-2 text-slate-700">Pydantic wire models: <span class="mono">RegisterRequest</span>, <span class="mono">AgentAddr</span>, <span class="mono">AgentFactsVC</span>, <span class="mono">DataIntegrityProof</span>. Defines what travels between services.</td></tr>
               <tr><td class="py-2 pr-4"><span class="file">cli.py</span></td><td class="py-2 text-slate-700">The client. Commands: <span class="mono">list</span>, <span class="mono">resolve</span>, <span class="mono">call</span>, <span class="mono">verify-did</span>, <span class="mono">demo-tamper</span>. Helper <span class="pill-fn pill">_resolve_chain</span> walks index→AgentAddr→AgentFacts and verifies every signature.</td></tr>
             </tbody>
@@ -148,7 +148,7 @@
             <tbody class="divide-y divide-slate-100">
               <tr><td class="py-2 pr-4 w-64"><span class="file">index_service/main.py</span> <span class="text-slate-400">:8000</span></td><td class="py-2 text-slate-700">The lean index. Routes <span class="pill pill-get">GET</span> <span class="mono">/</span>, <span class="pill pill-post">POST/PUT</span> <span class="mono">/register</span>, <span class="pill pill-get">GET</span> <span class="mono">/resolve/{name}</span>, <span class="pill pill-get">GET</span> <span class="mono">/agents</span>. Signs each AgentAddr via <span class="pill-fn pill">_row_to_agent_addr</span>. Also serves <span class="mono">/ui</span>.</td></tr>
               <tr><td class="py-2 pr-4"><span class="file">index_service/db.py</span></td><td class="py-2 text-slate-700">SQLite layer — one <span class="mono">agents</span> table. <span class="pill-fn pill">get_by_name</span> <span class="pill-fn pill">insert_agent</span> <span class="pill-fn pill">list_agents</span> <span class="pill-fn pill">upsert_agent</span>.</td></tr>
-              <tr><td class="py-2 pr-4"><span class="file">facts_host/main.py</span> <span class="text-slate-400">:8001 / :8002</span></td><td class="py-2 text-slate-700">Dumb store for signed VCs. <span class="pill pill-post">PUT</span>/<span class="pill pill-get">GET</span> <span class="mono">/facts/{id}</span>. One image, two roles (primary + private). Never verifies — that's the client's job.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="file">facts_host/main.py</span> <span class="text-slate-400">:8001 / :8002</span></td><td class="py-2 text-slate-700">A plain storage service for signed credentials — it just saves and serves them and never checks signatures; verification is the client's job. <span class="pill pill-post">PUT</span>/<span class="pill pill-get">GET</span> <span class="mono">/facts/{id}</span>. One image, two roles (primary + private).</td></tr>
               <tr><td class="py-2 pr-4"><span class="file">agents/main.py</span> <span class="text-slate-400">:8010 / :8011</span></td><td class="py-2 text-slate-700">Sample agents. <span class="pill pill-post">POST</span> <span class="mono">/echo</span>, <span class="pill pill-post">POST</span> <span class="mono">/translate</span>. The thing you call after verifying.</td></tr>
               <tr><td class="py-2 pr-4"><span class="file">adaptive_resolver/main.py</span> <span class="text-slate-400">:8020</span></td><td class="py-2 text-slate-700">§VI dispatcher. <span class="pill pill-post">POST</span> <span class="mono">/dispatch</span> → picks an endpoint via <span class="pill-fn pill">_pick_endpoint</span> (geo / capability / round-robin) and returns a signed, TTL-scoped routing token.</td></tr>
             </tbody>
@@ -243,10 +243,11 @@
         <h3 class="sec-title">What runs when you call an agent</h3>
         <p class="sec-desc">
           Tracing <span class="mono">Resolve &amp; Call</span> on the <span class="mono">multiregion</span> agent with
-          adaptive routing on (default routing = Auto, so the resolver round-robins; a pinned region is an
-          override). Each step shows the HTTP hop, the service handler it lands in, and the function chain.
-          The same chain runs in the CLI (<span class="pill-fn pill">_resolve_chain</span>) — only the verifier
-          library differs (browser TweetNaCl vs CLI PyNaCl).
+          adaptive routing on. The default routing is Auto, so the resolver round-robins — it picks endpoints
+          in rotation. Pinning a region is an override. Each step shows the HTTP hop, the service handler it
+          lands in, and the function chain. The same chain runs in the CLI
+          (<span class="pill-fn pill">_resolve_chain</span>); only the verifier library differs — the browser uses
+          TweetNaCl, the CLI uses PyNaCl.
         </p>
 
         <div class="border border-slate-200 rounded-md p-4 bg-slate-50/60">
@@ -254,7 +255,7 @@
             <div class="step-n">1</div>
             <div><span class="font-semibold">Fetch the index public key.</span><br/>
               <span class="pill pill-get">GET</span> <span class="mono">:8000/</span> → <span class="file">index_service.main</span> <span class="pill-fn pill">root()</span>.
-              Browser caches it as the trust anchor. <span class="text-slate-500">app.js <span class="pill-fn pill">fetchIndexPubkeyRich</span></span>
+              The browser caches this key as its trust anchor — the root key every later signature is checked against. <span class="text-slate-500">app.js <span class="pill-fn pill">fetchIndexPubkeyRich</span></span>
             </div>
           </div>
           <div class="step">
@@ -273,7 +274,7 @@
           </div>
           <div class="step">
             <div class="step-n">4</div>
-            <div><span class="font-semibold">Fetch the AgentFacts VC.</span><br/>
+            <div><span class="font-semibold">Fetch the AgentFacts Verifiable Credential (VC) — a signed record of what the agent claims about itself.</span><br/>
               <span class="pill pill-get">GET</span> <span class="mono">:8001/facts/{id}</span> → <span class="file">facts_host.main</span> <span class="pill-fn pill">get_facts()</span> (a dumb file read — no verification here).
             </div>
           </div>
@@ -327,9 +328,9 @@
             </thead>
             <tbody class="divide-y divide-slate-100">
               <tr><td class="py-2 pr-4"><span class="pill-fn pill">canonicalize</span></td><td class="py-2 pr-4 file">crypto.py / app.js</td><td class="py-2 text-slate-700">RFC 8785 JCS — sorted keys, no whitespace, UTF-8. Same bytes on both sides so signatures match.</td></tr>
-              <tr><td class="py-2 pr-4"><span class="pill-fn pill">sign_payload</span> / <span class="pill-fn pill">verify_payload</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">Detached Ed25519 over a plain object. Used for AgentAddr and routing tokens.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">sign_payload</span> / <span class="pill-fn pill">verify_payload</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">An Ed25519 signature that travels alongside the data (a 'detached' signature, kept separate from the payload). Used for AgentAddr and routing tokens.</td></tr>
               <tr><td class="py-2 pr-4"><span class="pill-fn pill">sign_vc_payload</span> / <span class="pill-fn pill">verify_vc</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">W3C VC v2 with DataIntegrityProof (eddsa-jcs-2022). Used for AgentFacts. Signs before the proof block exists.</td></tr>
-              <tr><td class="py-2 pr-4"><span class="pill-fn pill">pubkey_to_did_key</span> / <span class="pill-fn pill">verify_vc_via_did</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">did:key: encode the key into the identifier; verify a VC by recovering the key from its own verificationMethod — no index-supplied key needed.</td></tr>
+              <tr><td class="py-2 pr-4"><span class="pill-fn pill">pubkey_to_did_key</span> / <span class="pill-fn pill">verify_vc_via_did</span></td><td class="py-2 pr-4 file">crypto.py</td><td class="py-2 text-slate-700">did:key: the public key is packed right into the identifier, so you verify a VC using a key pulled from the credential's own verificationMethod — not a key handed over by the index.</td></tr>
               <tr><td class="py-2 pr-4"><span class="pill-fn pill">_row_to_agent_addr</span></td><td class="py-2 pr-4 file">index_service/main.py</td><td class="py-2 text-slate-700">Builds + signs an AgentAddr from a DB row at resolve time (fresh issued_at each call).</td></tr>
               <tr><td class="py-2 pr-4"><span class="pill-fn pill">_pick_endpoint</span></td><td class="py-2 pr-4 file">adaptive_resolver/main.py</td><td class="py-2 text-slate-700">Chooses an endpoint by policy: geo region, requested capability, else round-robin.</td></tr>
               <tr><td class="py-2 pr-4"><span class="pill-fn pill">_resolve_chain</span></td><td class="py-2 pr-4 file">cli.py</td><td class="py-2 text-slate-700">CLI driver — runs the 5-step verify chain and prints each check.</td></tr>

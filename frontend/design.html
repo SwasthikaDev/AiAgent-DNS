@@ -67,10 +67,11 @@
       <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
         Six diagrams. The first one traces a real user request — <em>"book me a flight"</em> —
         from the moment it's spoken to the moment a confirmation comes back, with every signature
-        and every W3C operation labelled. The other five are technical drill-downs you can refer
-        back to: the system architecture, the standard resolution chain, the adaptive routing path,
-        the tamper-detection failure mode, and the cryptographic trust hierarchy.
-        All rendered client-side as SVG via Mermaid. Below the diagrams, two written sections cover
+        and every W3C operation labelled. The other five go deeper, and you can refer back to them:
+        how the services fit together, the normal step-by-step lookup, how routing adapts when
+        endpoints move, what happens when someone tampers with the data, and which key signs and
+        verifies what. (All diagrams are drawn in your browser, no server needed.)
+        Below the diagrams, two written sections cover
         the <strong>design rationale</strong> (why it's built this way) and the
         <strong>limitations &amp; deferred scope</strong>.
       </p>
@@ -148,7 +149,7 @@ sequenceDiagram
             <p class="text-xs uppercase tracking-widest font-semibold text-slate-600 mb-2">🔐 Signature 1 — AgentAddr</p>
             <ul class="text-sm text-slate-700 space-y-1.5 leading-relaxed">
               <li><strong>Signed by:</strong> the lean index (<code>K_index</code>, Ed25519)</li>
-              <li><strong>Signed over:</strong> JCS-canonical bytes of the AgentAddr <em>minus</em> the signature field</li>
+              <li><strong>What's signed:</strong> the AgentAddr record itself (every field except the signature), converted to a standard byte-for-byte form (JCS) so the signature is reproducible</li>
               <li><strong>Why it matters:</strong> proves the lookup result wasn't substituted en route — the index really did say "here's where to find this agent"</li>
               <li><strong>Verified by:</strong> the client, using the index pubkey fetched at session start</li>
             </ul>
@@ -165,10 +166,10 @@ sequenceDiagram
         </div>
 
         <p class="text-xs text-slate-500 mt-4 leading-relaxed">
-          <span class="tp">Neither the index nor the facts host is asked to vouch for itself.</span> Both verifications happen
-          in the client (browser uses TweetNaCl, CLI uses PyNaCl) — same Ed25519 primitive over the same
-          RFC 8785 canonical JSON. If anyone tampers with the endpoint URL, the chain breaks and the
-          flight booking call is refused before it leaves the client.
+          <span class="tp">The client does all the checking itself — it never just takes a server's word that it's trustworthy.</span> Both
+          signature checks run on the client (the browser uses TweetNaCl, the command-line tool uses PyNaCl) — the
+          same Ed25519 maths over the same canonical (byte-for-byte standardised, RFC 8785) JSON. If anyone tampers
+          with the endpoint URL, the chain breaks and the flight booking call is refused before it leaves the client.
         </p>
 
         <!-- Standards in play -->
@@ -278,7 +279,8 @@ flowchart LR
         <h3 class="diagram-title">Resolution flow · the standard 5-step chain</h3>
         <p class="diagram-desc">
           This is exactly what runs when you click <em>Resolve</em> on any agent in the live demo.
-          Six HTTP exchanges; two Ed25519 verifications; one endpoint call. Around 300&nbsp;ms end-to-end on localhost.
+          It's six HTTP requests, two Ed25519 signature checks, and one call to the agent — about 300&nbsp;ms from
+          start to finish when everything runs on one machine.
         </p>
         <div class="mermaid-box">
 <pre class="mermaid">
@@ -319,9 +321,10 @@ sequenceDiagram
           If the agent's <code>AgentAddr</code> includes an <code>adaptive_resolver_url</code> (the
           <em>multiregion</em> demo agent does), the client can skip the static endpoint
           and ask the resolver for a routing token at request time. By default the <strong>resolver
-          decides</strong> the endpoint (round-robin here, GeoIP in production); pinning a region is an
-          optional override. The token is signed by the resolver and expires in
-          <strong>60&nbsp;seconds</strong>, so even an intercepted token has a tiny damage window.
+          decides</strong> the endpoint (here it just rotates through them in turn; in production it uses GeoIP to
+          pick the nearest one by location); pinning a specific region is an optional override. The token is signed
+          by the resolver and expires after <strong>60&nbsp;seconds</strong>, so even if someone intercepts one,
+          there's only a tiny window in which it could do harm.
         </p>
         <div class="mermaid-box">
 <pre class="mermaid">
@@ -359,9 +362,10 @@ sequenceDiagram
         <p class="text-xs font-semibold uppercase tracking-widest text-red-700 mb-1">Diagram 5</p>
         <h3 class="diagram-title">Tamper detection · why mutation fails</h3>
         <p class="diagram-desc">
-          A man-in-the-middle can intercept and modify the signed VC, but cannot forge a new
-          <code>DataIntegrityProof</code> without the agent's private key. The client re-canonicalizes
-          the mutated document, runs Ed25519 verify, and sees the bit-for-bit mismatch.
+          A man-in-the-middle can intercept and change the signed credential, but cannot forge a new
+          <code>DataIntegrityProof</code> without the agent's private key. So if the attacker alters the document,
+          the signature no longer matches it — and the client catches the tampering: it re-canonicalizes the
+          changed document, runs Ed25519 verify, and sees the bit-for-bit mismatch.
         </p>
         <div class="mermaid-box">
 <pre class="mermaid">
@@ -492,11 +496,13 @@ flowchart TB
         <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Rationale</p>
         <h3 class="diagram-title">Why it's built this way · the decisions behind the diagrams</h3>
         <p class="diagram-desc">
-          The whole architecture follows from one idea: <span class="tp">split identity from metadata</span>, so the
-          index can stay tiny and rarely-written while everything volatile lives in documents that can be
-          re-published at any moment <em>without touching the index</em>. DNS bundles the two and updates in
-          minutes-to-hours; at trillions of agents that move every few seconds, that breaks. Separating them
-          cuts index write-load by roughly <strong>10<sup>4</sup>×</strong> while keeping sub-second global resolution.
+          The whole architecture follows from one simple idea: <span class="tp">keep an agent's identity (its name
+          and key, which rarely change) separate from its details (endpoints, capabilities, which change
+          constantly)</span>. That way the index can stay tiny and is hardly ever written to, while everything that
+          changes often lives in documents that can be re-published at any moment <em>without touching the index</em>. DNS lumps the two together and takes
+          minutes to hours to update; with trillions of agents that move every few seconds, that simply can't keep
+          up. Keeping them separate means the index has to be rewritten about <strong>10,000× less often</strong>,
+          while resolution still completes in under a second worldwide.
         </p>
 
         <div class="space-y-4 mt-5">
@@ -523,9 +529,10 @@ flowchart TB
           <div class="border border-slate-200 rounded-md p-4 bg-slate-50">
             <p class="text-sm font-semibold text-slate-800">Why the facts host is a deliberately "dumb", untrusted store</p>
             <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
-              The host never verifies signatures on upload — it only checks document shape. Trust is entirely the
-              client's job. This means compromising a facts host (or the network in front of it) <em>cannot</em>
-              forge metadata: the agent's signature still fails verification. It also decouples hosting from trust,
+              The host never verifies signatures on upload — it only checks the format/structure of the document.
+              Trust is entirely the client's job. So even if a facts host (or the network in front of it) is
+              compromised, the attacker still can't forge metadata: the agent's signature won't match the changed
+              document, and the client rejects it. It also decouples hosting from trust,
               which is what makes the third-party <strong>privacy path</strong> possible.
             </p>
           </div>
@@ -534,8 +541,8 @@ flowchart TB
             <p class="text-sm font-semibold text-slate-800">Why two facts hosts instead of one</p>
             <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
               Same service, two roles: an agent-owned <em>primary</em> host (<code>:8001</code>) and a neutral
-              <em>third-party</em> host (<code>:8002</code>) for the privacy path. Running both makes the paper's
-              "quilt" of registration models concrete instead of theoretical, at near-zero extra cost.
+              <em>third-party</em> host (<code>:8002</code>) for the privacy path. Running both makes the paper's idea
+              of mixing different registration styles (its "quilt") concrete instead of theoretical, at near-zero extra cost.
             </p>
           </div>
         </div>

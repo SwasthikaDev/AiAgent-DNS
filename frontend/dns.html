@@ -64,8 +64,8 @@
       <p class="text-sm md:text-base text-slate-600 mt-3 max-w-3xl leading-relaxed">
         The paper is titled <em>Beyond DNS</em> for a reason: DNS is the most successful naming system ever built,
         and NANDA borrows almost all of its operational wisdom. But DNS was designed in <strong>1983</strong> for
-        <em>static, human-operated</em> hosts — and that assumption breaks for AI agents that move every few seconds,
-        need verifiable capabilities, and demand sub-second revocation. This page covers <strong>how DNS works</strong>,
+        <em>static, human-operated</em> hosts. That assumption breaks for AI agents that move every few seconds,
+        need to prove what they can <em>do</em> (not just who owns them), and demand sub-second revocation. This page covers <strong>how DNS works</strong>,
         <strong>what keeps it reliable</strong> (which NANDA keeps), <strong>where it falls short for agents</strong>,
         and whether NANDA can be <strong>affordable</strong> as an index.
       </p>
@@ -79,8 +79,8 @@
         <ul class="lead list-disc pl-5 mt-2">
           <li><strong>Maps a name → a static address</strong> (e.g. <code>example.com</code> → an IP (Internet Protocol) address via an A/AAAA address record), plus MX (Mail eXchange), TXT (text), and NS (Name Server) records.</li>
           <li><strong>Hierarchical delegation:</strong> root servers (<code>.</code>) → TLD (Top-Level Domain) servers (<code>.com</code>) → the domain's authoritative name server. No single authority owns the whole tree.</li>
-          <li><strong>Resolution:</strong> your stub resolver asks a recursive resolver (your ISP (Internet Service Provider), or <code>8.8.8.8</code> / <code>1.1.1.1</code>), which walks root → TLD → authoritative, then caches the answer.</li>
-          <li><strong>Caching governed by TTLs</strong> at every layer — most queries never reach an authoritative server. This is the secret to DNS's scale.</li>
+          <li><strong>Resolution:</strong> your device asks a lookup server — a recursive resolver run by your ISP (Internet Service Provider), or <code>8.8.8.8</code> / <code>1.1.1.1</code> — and that server walks root → TLD → the domain's own server, then caches the answer.</li>
+          <li><strong>Caching governed by TTLs (Time To Live — how long an answer can be reused before it must be looked up again)</strong> at every layer — most queries never reach an authoritative server. This is the secret to DNS's scale.</li>
           <li>Scale today: ~<strong>300M+ domains</strong>, ~<strong>10B+ lookups/day</strong> — but they're mostly <em>static</em> records updated minutes-to-hours apart.</li>
         </ul>
       </div>
@@ -108,7 +108,7 @@
               <tr><td class="py-2 pr-4 font-medium">Hierarchy / delegation</td><td class="py-2 pr-4 dns">Root → TLD → authoritative; no one owns the whole tree.</td><td class="py-2"><span class="yes">✔ keeps</span> — the "quilt": federated indexes + enterprise registries.</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Redundancy</td><td class="py-2 pr-4 dns">Multiple NS (Name Server) records per zone, multiple root operators.</td><td class="py-2"><span class="yes">✔ keeps</span> — federated, replicated indexes; no single point of failure.</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Lean records</td><td class="py-2 pr-4 dns">Tiny records → cheap to store, replicate, cache.</td><td class="py-2"><span class="yes">✔ keeps &amp; improves</span> — ≤120 B records, ~10⁴× fewer writes.</td></tr>
-              <tr><td class="py-2 pr-4 font-medium">Eventual consistency</td><td class="py-2 pr-4 dns">Accepts staleness within TTL (an AP system) to stay available.</td><td class="py-2"><span class="yes">✔ keeps</span> — AP for resolution, made safe by signing + TTLs.</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Eventual consistency</td><td class="py-2 pr-4 dns">Tolerates briefly out-of-date answers (within the TTL) so the system stays available — it favors availability over instant consistency.</td><td class="py-2"><span class="yes">✔ keeps</span> — AP for resolution, made safe by signing + TTLs.</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Signed records (DNSSEC — DNS Security Extensions)</td><td class="py-2 pr-4 dns">Optional record signing, chain of trust from root — partial adoption.</td><td class="py-2"><span class="yes">✔ keeps &amp; mandates</span> — everything is signed (Ed25519/W3C VC), not optional.</td></tr>
             </tbody>
           </table>
@@ -130,7 +130,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              <tr><td class="py-2 pr-4 font-medium">Static vs dynamic</td><td class="py-2 pr-4 dns">DNS <em>does</em> have a TTL, but one (usually long) TTL per static record — so a change propagates over minutes–hours.</td><td class="py-2 pr-4 nanda"><strong>Layered</strong> TTL tiers — identity 1–6 h, metadata 5–15 m, <strong>endpoint 30–60 s</strong> — so endpoints can move every few seconds while identity stays cached; &lt;1 s global.</td><td class="py-2 mono">II.C</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Static vs dynamic</td><td class="py-2 pr-4 dns">DNS <em>does</em> have a TTL, but one (usually long) TTL per static record — so a change propagates over minutes–hours.</td><td class="py-2 pr-4 nanda"><strong>Layered</strong> TTL tiers: slow-changing data is cached long, fast-changing data is refreshed often — identity 1–6 h, metadata 5–15 m, <strong>endpoint 30–60 s</strong>. So an endpoint can move every few seconds while identity stays cached; &lt;1 s global.</td><td class="py-2 mono">II.C</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Trust model</td><td class="py-2 pr-4 dns">A TLS (Transport Layer Security) certificate proves you <em>own a domain</em> — nothing about code or behaviour.</td><td class="py-2 pr-4 nanda">W3C Verifiable Credentials — signed <em>capability</em> proofs, not just ownership.</td><td class="py-2 mono">II.G, VII</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Revocation</td><td class="py-2 pr-4 dns">Weak &amp; slow (certificate revocation via CRL (Certificate Revocation List) / OCSP (Online Certificate Status Protocol); DNS TTL expiry).</td><td class="py-2 pr-4 nanda">Sub-second VC-Status revocation + short-lived (&lt;5 min) credentials.</td><td class="py-2 mono">VII.D</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Privacy</td><td class="py-2 pr-4 dns">Lookups expose who asks for what (DoH (DNS-over-HTTPS) / DoT (DNS-over-TLS) only partial).</td><td class="py-2 pr-4 nanda">Dual-path resolution — <code>PrivateFactsURL</code> hides the requester; split-horizon.</td><td class="py-2 mono">VII.C</td></tr>
@@ -165,10 +165,11 @@
         <p class="eyebrow text-rose-700">Threat model</p>
         <h3 class="sec-title">How DNS is attacked — and whether the same tactic works on NANDA</h3>
         <p class="sec-desc">
-          The decisive difference is that NANDA <strong>signs everything and verifies client-side</strong>. That
-          neutralises the entire class of <em>integrity/authenticity</em> attacks that plague DNS — forging or
-          tampering with a record becomes <em>detectable and rejected</em> instead of catastrophic. What remains are
-          availability, key-management, and naming problems, which are <em>managed</em>, not magically solved.
+          The decisive difference is that NANDA <strong>signs everything and verifies client-side</strong>. Because
+          every record is signed, forging or altering one gets caught and rejected — so the entire class of
+          <em>integrity/authenticity</em> attacks that plague DNS stops working. What signing can't fix: keeping the
+          service reachable (availability), guarding the secret signing keys (key management), and stopping look-alike
+          names. Those are <em>managed</em>, not magically solved.
         </p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -200,7 +201,7 @@
                 <td class="py-2.5 pr-4 font-medium">DDoS / amplification</td>
                 <td class="py-2.5 pr-4 dns">Flood the infrastructure (Dyn 2016); abuse open resolvers to amplify.</td>
                 <td class="py-2.5 pr-4 partial">△ partial</td>
-                <td class="py-2.5 text-slate-700">Still possible (any service). Mitigated by edge cache + anycast + CDN absorbing floods; signed-cacheable records keep serving during an origin attack; rate-limit so you're not an amplifier.</td>
+                <td class="py-2.5 text-slate-700">Still possible against any service. Edge caches, anycast, and a CDN absorb the flood. Signed, cacheable records keep serving even while the origin is under attack. Rate-limiting stops your servers from being used as an amplifier — a relay an attacker abuses to multiply traffic against a victim.</td>
               </tr>
               <tr>
                 <td class="py-2.5 pr-4 font-medium">Replay (serve an old valid record)</td>
@@ -218,13 +219,13 @@
                 <td class="py-2.5 pr-4 font-medium">Typosquatting / look-alike names</td>
                 <td class="py-2.5 pr-4 dns">Register <code>gooogle.com</code> to fool users.</td>
                 <td class="py-2.5 pr-4 partial">△ residual</td>
-                <td class="py-2.5 text-slate-700">A look-alike agent name is still registerable, but it won't carry the right <em>issuer / credentials / reputation</em> — trust policy (whitelisted issuers, TRS) catches it. A discovery-layer problem, mitigated not eliminated.</td>
+                <td class="py-2.5 text-slate-700">A look-alike agent name is still registerable, but it won't carry the right <em>issuer / credentials / reputation</em> — trust policy (only accepting approved issuers, plus a trust-and-reputation score) catches it. A discovery-layer problem, mitigated not eliminated.</td>
               </tr>
               <tr>
                 <td class="py-2.5 pr-4 font-medium">Dangling pointer / endpoint takeover</td>
                 <td class="py-2.5 pr-4 dns">A record points to a reclaimed host an attacker now controls.</td>
                 <td class="py-2.5 pr-4 partial">△ residual</td>
-                <td class="py-2.5 text-slate-700">The signed facts <em>legitimately</em> point to a now-compromised endpoint — the signature is valid, the host isn't. Mitigate with short TTLs, revocation, and agent re-publish/rotation.</td>
+                <td class="py-2.5 text-slate-700">The signature is still valid because the record was signed honestly — but an attacker has since taken over the server it points to, so it now routes you to a malicious host. Signing can't catch this. Mitigate with short TTLs, revocation, and agent re-publish/rotation.</td>
               </tr>
               <tr>
                 <td class="py-2.5 pr-4 font-medium">Enumeration / zone-walking</td>
@@ -247,6 +248,80 @@
           What it <em>doesn't</em> magically fix is availability (DDoS), key custody, replay (bounded by TTL),
           and naming/endpoint trust — those are managed with caching, HSMs, short TTLs, revocation, and trust policy.
           A good answer in the room names both halves: what the crypto eliminates, and what still needs operational care.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============== NANDA-SPECIFIC THREATS ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-rose-700">NANDA's own attack surface</p>
+        <h3 class="sec-title">New risks DNS doesn't even have</h3>
+        <p class="sec-desc">
+          Signing kills the <em>forgery</em> class above — poisoning, MITM, tampering all fail verification. But because
+          NANDA adds an <strong>identity, issuer, registration and capability</strong> layer on top of resolution, it inherits
+          attack vectors DNS never had. These are the ones signing <em>can't</em> catch — they need key custody, federation,
+          registration governance, and trusted issuers.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                <th class="py-2 pr-4">Attack</th><th class="py-2 pr-4">What the attacker does</th><th class="py-2 pr-4">Risk</th><th class="py-2">Defence</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Stolen private key</td>
+                <td class="py-2.5 pr-4 dns">Steal the <strong>index</strong>, <strong>agent</strong>, or <strong>resolver</strong> key → sign <em>legitimately</em>. Crypto can't tell. Index key = whole-system compromise.</td>
+                <td class="py-2.5 pr-4 no">⚠ serious</td>
+                <td class="py-2.5 text-slate-700">Keys in a <strong>KMS/HSM</strong> (not plaintext), rotation, fast revocation, and 3-key blast-radius isolation. <em>(MVP keeps plaintext keys in <code>data/</code> — the first thing to fix.)</em></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Compromised / fake index</td>
+                <td class="py-2.5 pr-4 dns">Remap a name → <em>attacker's</em> key + facts. The whole chain then self-verifies, so the client trusts the attacker. Like a rogue Certificate Authority.</td>
+                <td class="py-2.5 pr-4 no">⚠ serious</td>
+                <td class="py-2.5 text-slate-700"><strong>did:key alone doesn't save you</strong> — the index chose the key. Pin the index key <em>out-of-band</em>, <strong>federate</strong> (no single index), add transparency logs, and resolve by <strong>self-certifying DID</strong> so the key <em>is</em> the name.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Key-substitution (skipped cross-check)</td>
+                <td class="py-2.5 pr-4 dns">Supply forged facts <em>and</em> a matching <code>did:key</code>, so they self-verify, if the client trusts the key the document supplies about itself.</td>
+                <td class="py-2.5 pr-4 partial">△ if lazy</td>
+                <td class="py-2.5 text-slate-700"><strong>Cross-check</strong>: the facts' <code>did:key</code> must decode to the same key as the index-vouched <code>public_key</code> in the AgentAddr. Never trust a key a document asserts about itself.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Registration abuse — impersonation / Sybil</td>
+                <td class="py-2.5 pr-4 dns">An open <code>/register</code> lets anyone claim <em>any</em> name (impersonate <code>paypal-agent</code>) or flood the index with millions of fake agents.</td>
+                <td class="py-2.5 pr-4 no">⚠ serious (MVP)</td>
+                <td class="py-2.5 text-slate-700">Authentication + rate-limiting + <strong>anti-Sybil</strong> on registration (§II.G). <em>(MVP <code>/register</code> is open — a real hole.)</em></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Capability spoofing</td>
+                <td class="py-2.5 pr-4 dns">An agent <em>self-advertises</em> capabilities it doesn't have ("certified medical advisor"). A self-signed claim can lie.</td>
+                <td class="py-2.5 pr-4 partial">△ by design</td>
+                <td class="py-2.5 text-slate-700">Capabilities must be <strong>VCs from trusted issuers</strong> (audited), not self-asserted. This is the whole point of §II.G — "audited metadata," not "self-advertising."</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Malicious / compromised issuer</td>
+                <td class="py-2.5 pr-4 dns">An issuer you trust is compromised → it vouches for malicious agents, and their credentials verify fine.</td>
+                <td class="py-2.5 pr-4 partial">△ governance</td>
+                <td class="py-2.5 text-slate-700">Issuer <strong>revocation</strong>, cross-signing between trust zones, reputation — and the verifier <em>chooses</em> which issuers to trust. A governance problem, not a crypto one.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">Revoked-credential replay</td>
+                <td class="py-2.5 pr-4 dns">Use a credential that's been <em>killed</em> but hasn't expired yet.</td>
+                <td class="py-2.5 pr-4 partial">△ bounded</td>
+                <td class="py-2.5 text-slate-700"><strong>VC-Status</strong> check before calling + short-lived VCs (&lt;5 min). TTL bounds the window; revocation closes it fast.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="lead mt-4">
+          <strong>The split that lands in the room:</strong>
+          <span class="tp">signing stops <em>forgery</em>; what's left is stolen keys, trusted-but-compromised authorities, and abuse of registration and trust.</span>
+          Those aren't fixed with more signatures — they need <strong>key management (KMS), federation, self-certifying DIDs,
+          registration governance, revocation, and trusted-issuer credentials</strong>. DNS never had this attack surface because it
+          never tried to prove <em>identity, capability, or trust</em> — only ownership of a name.
         </p>
       </div>
     </section>
@@ -290,7 +365,7 @@
           the index.</strong>
         </p>
         <ul class="lead list-disc pl-5 mt-2">
-          <li><strong class="tp">The core index stays cheap — by design.</strong> ≤120 B records and ~10⁴× fewer writes than DNS mean low storage and write cost; reads are served from edge caches. The index is engineered to be DNS-cheap precisely so it <em>can</em> sustain at scale.</li>
+          <li><strong class="tp">The core index stays cheap — by design.</strong> Records are tiny (120 bytes or less) and rewritten about 10,000× less often than DNS records, so storage and write costs stay low — and reads come straight from edge caches. The index is engineered to be DNS-cheap precisely so it <em>can</em> sustain at scale.</li>
           <li><strong>Expensive work is pushed to the edges, paid by whoever benefits.</strong> Rich metadata (AgentFacts) is hosted and paid for by the <em>agent</em> (self-host / CDN / IPFS); adaptive routing is stateless edge compute; credential verification is <strong>offline and cacheable</strong>, so it doesn't hit a central server per request. The index never carries that load.</li>
           <li><strong>Federation spreads the cost.</strong> Like DNS root servers run by different operators, the NANDA index is a <em>quilt</em> — enterprises, clouds, and public bodies each run a shard, so no single party funds the whole thing.</li>
           <li><strong>The added cost vs DNS is real but bounded.</strong> A resolution does more crypto than a DNS lookup, but Ed25519 verification is microseconds and happens <em>client-side</em> on cached, signed objects — it scales with clients, not with the index.</li>

@@ -98,7 +98,7 @@
               <tr><td class="py-2 pr-4 font-medium">Resolutions / day</td><td class="py-2 pr-4 mono">2 B × 5</td><td class="py-2 text-slate-700">10 B / day</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Avg resolutions / sec</td><td class="py-2 pr-4 mono">10 B ÷ 86,400</td><td class="py-2 text-slate-700">≈ <strong>116 k/s</strong> average</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Peak (≈3× diurnal)</td><td class="py-2 pr-4 mono">116 k × 3</td><td class="py-2 text-slate-700">≈ <strong>350 k/s</strong> peak reads</td></tr>
-              <tr><td class="py-2 pr-4 font-medium">Origin reads after cache</td><td class="py-2 pr-4 mono">116 k × (1 − 0.95)</td><td class="py-2 text-slate-700">≈ <strong>6 k/s</strong> avg hit the index (95% edge-cache hit)</td></tr>
+              <tr><td class="py-2 pr-4 font-medium">Origin reads after cache</td><td class="py-2 pr-4 mono">116 k × (1 − 0.95)</td><td class="py-2 text-slate-700">≈ <strong>6 k/s</strong> reach the index on average (after a 95% edge-cache hit rate)</td></tr>
               <tr><td class="py-2 pr-4 font-medium">New registrations / sec</td><td class="py-2 pr-4 mono">1 B ÷ 1 yr</td><td class="py-2 text-slate-700">≈ <strong>32/s</strong> index writes</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Index pointer updates (key rotation, URL changes)</td><td class="py-2 pr-4 mono">~few/agent/yr</td><td class="py-2 text-slate-700">~hundreds/s — still small</td></tr>
               <tr><td class="py-2 pr-4 font-medium">Facts/metadata updates</td><td class="py-2 pr-4 mono">~100 k/s</td><td class="py-2 text-slate-700"><strong>off the index</strong> — agents self-publish to facts hosting</td></tr>
@@ -153,7 +153,7 @@ flowchart LR
           <li><strong>Global anycast + GeoDNS (geographic DNS routing)</strong> routes each client to the nearest region.</li>
           <li><strong>CDN (Content Delivery Network) / edge cache</strong> serves signed AgentAddr + AgentFacts — absorbs ~95%+ of reads (safe, because they're signed).</li>
           <li><strong>Regional L7 (Layer 7 / application-layer) load balancers</strong> spread the remaining ~6 k/s across a <strong>stateless index-resolver fleet</strong> that autoscales on RPS (requests per second).</li>
-          <li><strong>Sharded, replicated KV (key-value) store</strong> (consistent hashing on <code>agent_id</code>) — e.g. 32–64 shards, 3 replicas each, multi-region read replicas. 6 k/s origin reads + ~hundreds/s writes is comfortable; far under the 10 k/s/shard target.</li>
+          <li><strong>Sharded, replicated KV (key-value) store</strong> (consistent hashing on <code>agent_id</code>) — Say 32–64 shards with 3 replicas each, plus multi-region read replicas. The load is 6 k/s of origin reads and only a few hundred writes per second, which sits comfortably below the 10 k/s-per-shard target.</li>
           <li><strong>Facts hosting</strong> = object storage + CDN (agent self-publishes); updates never hit the index.</li>
           <li><strong>Adaptive-resolver fleet</strong> — stateless, at the edge / serverless, signs short-TTL routing tokens.</li>
           <li><strong>VC-Status / revocation service</strong> — fast replicated cache + an event stream for sub-second global propagation.</li>
@@ -166,22 +166,108 @@ flowchart LR
 flowchart TB
     C["Client / Agent"] --> GEO["Anycast + GeoDNS<br/>nearest region"]
     GEO --> EDGE["CDN / Edge cache<br/>~95% of reads"]
-    EDGE -->|"miss ~5%"| LB["Regional L7<br/>load balancer"]
+    EDGE -->|"TTL still valid · ~95% hit"| HIT["served from cache<br/>no origin load"]
+    EDGE -->|"TTL expired / not cached · ~5% miss"| LB["Regional L7<br/>load balancer"]
     LB --> RF["Stateless resolver fleet<br/>(autoscaled)"]
-    RF --> KV[("Sharded KV index<br/>32–64 shards · 3 replicas")]
-    RF --> AR["Adaptive resolver<br/>(signed tokens)"]
+    RF --> KV[("Sharded KV index<br/>📍 stores AgentAddr<br/>32–64 shards · 3 replicas")]
+    RF --> AR["Adaptive resolver<br/>signs routing token<br/>naming the endpoint"]
     RF --> REV["VC-Status<br/>revocation cache"]
-    EDGE -. facts .-> OS[("Facts<br/>object store / CDN / IPFS")]
+    EDGE -. facts .-> OS[("Facts store / CDN / IPFS<br/>📍 stores AgentFacts")]
+    AR -. "names" .-> EP["📍 AI agent endpoint<br/>the agent's own server<br/>(can be anywhere)"]
+    C ==>|"call directly, after verifying"| EP
     KV -. CDC .-> K[["Kafka backbone<br/>regs · rotations · revocations · telemetry"]]
     K -. invalidate .-> EDGE
     K -. propagate .-> REV
     classDef e fill:#dbeafe,stroke:#1d4ed8,color:#0f172a
     classDef s fill:#ede9fe,stroke:#7c3aed,color:#0f172a
-    class EDGE,GEO e
+    classDef ep fill:#dcfce7,stroke:#16a34a,color:#0f172a
+    class EDGE,GEO,HIT e
     class KV,OS,REV s
+    class EP ep
 </pre>
         </div>
         <p class="diagram-cap">Scaled deployment: edge caching absorbs reads; an L7 load balancer fans the misses across a stateless resolver fleet over a sharded KV index; facts live off-index; an async backbone propagates updates/revocations and invalidates the edge.</p>
+
+        <!-- ===== WHERE THE NANDA OBJECTS LIVE ===== -->
+        <p class="lead mt-4"><strong>📍 Where the three NANDA objects sit on the diagram:</strong></p>
+        <ul class="lead list-disc pl-5 space-y-1">
+          <li><strong>AgentAddr</strong> (the lean signed pointer) → lives in the <strong>Sharded KV index</strong>.</li>
+          <li><strong>AgentFacts</strong> (the rich signed metadata) → lives in the <strong>Facts store / CDN / IPFS</strong>, off the index.</li>
+          <li><strong>AI agent endpoint</strong> (the green node) → the <strong>agent's own server</strong>, which can be anywhere. The adaptive resolver only <em>names</em> it; the client then <span class="tp">calls it directly, after verifying</span> — that call never passes through the index or resolver infrastructure.</li>
+        </ul>
+
+        <!-- ===== HOW TO READ THE DIAGRAM ===== -->
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-6 mb-2">How to read the diagram above</p>
+        <p class="lead">
+          There are <strong>two kinds of arrow</strong>. <strong>Solid arrows are the live request path</strong> — what
+          happens, top to bottom, the moment a client resolves an agent. <strong>Dotted arrows are the background path</strong> —
+          facts hosting, cache invalidation and revocation, none of which sit on the request's critical path. And
+          <strong>two colours</strong>: <span style="color:#1d4ed8;font-weight:600">blue</span> is the
+          <strong>edge tier</strong> (GeoDNS, the CDN) and <span style="color:#7c3aed;font-weight:600">purple</span> is the
+          <strong>state tier</strong> (the index, the facts store, the revocation cache).
+        </p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-4 mb-2">① The live request path — solid arrows, top to bottom</p>
+        <ol class="lead list-decimal pl-5 space-y-1">
+          <li><strong>Client → Anycast + GeoDNS.</strong> The request is steered to the <em>nearest region</em> — lower latency, and load (including DDoS floods) is spread across regions.</li>
+          <li><strong>→ CDN / Edge cache.</strong> <span class="tp">About 95% of reads stop right here</span> — served straight from the edge with <em>zero</em> load on the origin. That's only safe because every object is signed and the client re-verifies it, so a cache can never hand back a forged answer.
+            <br/><span class="text-slate-500">It's a <strong>TTL decision</strong>: a read is a <em>hit</em> only while the cached object's <strong>TTL is still valid</strong>; once it <strong>expires</strong> (or was never cached), that's the ~5% <em>miss</em> — the edge re-fetches a fresh, freshly-signed copy from the origin, then caches it again for its next TTL window. So the tiered TTLs (AgentAddr 1&nbsp;h, AgentFacts 5&nbsp;m, routing token 60&nbsp;s) decide how often each object falls through to the origin.</span></li>
+          <li><strong>→ (≈5% miss) → Regional L7 load balancer.</strong> Only the small slice that <em>misses</em> the cache falls through — roughly 6k/s even at a billion agents.</li>
+          <li><strong>→ Stateless resolver fleet.</strong> The load balancer fans those misses across an autoscaling, stateless fleet — no sticky state, so any node can serve any request and you add/remove nodes freely.</li>
+          <li><strong>→ three back-ends.</strong> The fleet then reads the <strong>sharded KV index</strong> (the lean AgentAddr lookup), gets a short-lived signed routing token from the <strong>adaptive resolver</strong>, and checks the <strong>VC-Status revocation cache</strong> to be sure the credential hasn't been revoked.</li>
+        </ol>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-4 mb-2">② The background path — dotted arrows</p>
+        <ul class="lead list-disc pl-5 space-y-1">
+          <li><strong>Facts are served off-index.</strong> The bulky, fast-changing AgentFacts come straight from object storage / a CDN / IPFS — <span class="tp">the index only ever holds the pointer, never the metadata</span>. This is what keeps index writes tiny.</li>
+          <li><strong>The index emits change events.</strong> Registrations, key rotations, revocations and telemetry flow as <em>Change Data Capture</em> events onto a <strong>Kafka backbone</strong>.</li>
+          <li><strong>Kafka actively invalidates the edge cache</strong> when something changes — so a critical update doesn't have to wait for a TTL to expire.</li>
+          <li><strong>Kafka propagates revocations</strong> to the revocation cache — sub-second and global, the answer to "kill a compromised agent <em>now</em>."</li>
+        </ul>
+
+        <p class="lead mt-4">
+          <strong>The whole story in three points:</strong>
+          <span class="tp">95% of reads never reach the origin</span> (caching solves the read load);
+          <span class="tp">the facts churn never touches the index</span> (off-index publishing keeps writes tiny); and
+          <span class="tp">the async backbone invalidates caches and propagates revocations</span> (so freshness doesn't
+          depend on TTL expiry alone). Those are the same three levers as the punchline below — the diagram just draws them out.
+        </p>
+
+        <!-- ===== PLAIN-ENGLISH GLOSSARY (collapsible) ===== -->
+        <details class="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <summary class="cursor-pointer select-none text-sm font-semibold text-slate-700">
+            📖 Plain-English glossary — expand any time you blank on a term (anycast, CDN, sharding…)
+          </summary>
+          <div class="overflow-x-auto mt-3">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b-2 border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
+                  <th class="py-2 pr-4">Term</th><th class="py-2">Dead-simple meaning</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr><td class="py-2 pr-4 font-medium">Anycast</td><td class="py-2 text-slate-700">One address, announced from many places worldwide — the network sends you to the <em>nearest</em> one automatically. (Like one phone number that connects you to your closest branch.)</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">GeoDNS</td><td class="py-2 text-slate-700">DNS that returns a different answer based on where you are — it hands back the <em>nearest data center</em>.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">CDN</td><td class="py-2 text-slate-700">Content Delivery Network — a web of servers spread across the globe that keep cached copies of content close to users. (Local warehouses for fast delivery.)</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Edge</td><td class="py-2 text-slate-700">"Near the user," as opposed to the central <em>origin</em>. An <em>edge cache</em> lives on those nearby servers.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Cache hit / miss</td><td class="py-2 text-slate-700"><em>Hit</em> = found in the cache, served instantly. <em>Miss</em> = not cached, so the request travels deeper to fetch it.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">L7 load balancer</td><td class="py-2 text-slate-700">A traffic-spreader that fans requests across many identical servers so none gets overloaded. <em>L7 = Layer 7</em>, the application/HTTP layer, so it can read the request to route smartly. (A receptionist who reads your request and sends you to a free desk.)</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Stateless</td><td class="py-2 text-slate-700">Servers keep <em>no memory</em> of you between requests, so <em>any</em> server can handle <em>any</em> request — and you can add/remove servers freely.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">KV store</td><td class="py-2 text-slate-700">Key-Value store — a dictionary-style database: "give me the value for this key." Very fast lookups. Here: <code>agent_id → the tiny record</code>.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Sharding</td><td class="py-2 text-slate-700">Splitting data across many machines, each holding a <em>slice</em>, so no single machine holds it all. (A–M on one shelf, N–Z on another.)</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Replica</td><td class="py-2 text-slate-700">A copy of a shard — for backup, and to serve reads locally near each region.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Consistent hashing</td><td class="py-2 text-slate-700">A way to decide which shard a key belongs to, such that adding/removing a shard moves only a small fraction of the data.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Object store</td><td class="py-2 text-slate-700">Cheap storage for files/blobs (e.g. Amazon S3) — where the bulky AgentFacts live, off the index.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">IPFS</td><td class="py-2 text-slate-700">InterPlanetary File System — a decentralized, content-addressed file-storage network; an optional place to host facts.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">CDC</td><td class="py-2 text-slate-700">Change Data Capture — every change to the database is emitted as an <em>event</em> ("this row changed") so other systems can react.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Kafka</td><td class="py-2 text-slate-700">A system for streaming events — a durable, ordered "conveyor belt of things that happened" that many systems read from. (The "async backbone.")</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Cache invalidation</td><td class="py-2 text-slate-700">Telling caches to <em>drop</em> their stored copy so they fetch a fresh one — used for critical changes that can't wait for the TTL.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">TTL</td><td class="py-2 text-slate-700">Time To Live — how long a cached item stays valid before it must be re-fetched.</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Revocation</td><td class="py-2 text-slate-700">Banning a credential before its TTL expires — the instant "kill switch" for a compromised agent.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">4 · Per-component scaling decisions</p>
         <div class="overflow-x-auto">
@@ -205,8 +291,7 @@ flowchart TB
         <p class="lead mt-4">
           <strong>The punchline for the whiteboard:</strong> at 1 B agents this is <em>not</em> a storage problem
           (~120 GB) and barely a write problem (~hundreds/s on the index) — it's a <strong>read-distribution and
-          freshness problem</strong>. Caching + sharded read replicas handle the reads; pushing metadata + revocation
-          off the index keeps writes tiny; the lean signed record is what makes all of it cheap. Everything below
+          freshness problem</strong>. Three levers solve it: caching and sharded read replicas absorb the reads; moving metadata and revocation off the index keeps writes tiny; and the lean signed record keeps the whole thing cheap. Everything below
           expands on these levers.
         </p>
       </div>
@@ -267,7 +352,7 @@ flowchart TB
               <tr>
                 <td class="py-2.5 pr-4 font-semibold text-blue-700">Efficiency</td>
                 <td class="py-2.5 pr-4 text-slate-600">Minimum work per resolution; cheap at scale.</td>
-                <td class="py-2.5 text-slate-700"><strong>~10⁴× fewer writes</strong> than DNS (lean records); <strong>verify-once-cache-everywhere</strong> (signed objects are CDN-cacheable); Ed25519 is small &amp; fast (32 B keys, 64 B sigs); JCS canonicalisation means a signature made once verifies anywhere with no re-signing; TTLs tuned to volatility.</td>
+                <td class="py-2.5 text-slate-700">Lean records mean <strong>~10⁴× fewer writes</strong> than DNS. Signed objects are CDN-cacheable, so you <strong>verify once and cache everywhere</strong>. Ed25519 keys and signatures are small and fast (32 B keys, 64 B signatures). Canonicalising each object the same way (JCS, JSON Canonicalization Scheme) means a signature made once verifies anywhere with no re-signing. And TTLs are tuned to how volatile each record is.</td>
               </tr>
               <tr>
                 <td class="py-2.5 pr-4 font-semibold text-rose-700">Reliability</td>
@@ -291,7 +376,7 @@ flowchart TB
         <h3 class="sec-title">Polyglot persistence — the right store for each job</h3>
         <p class="sec-desc">
           There is no single database. Different parts of NANDA have completely different access patterns, so each
-          gets the store that fits — the classic <strong>polyglot persistence</strong> approach.
+          gets the store that fits — the classic <strong>polyglot persistence</strong> approach (many stores, not one).
         </p>
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-2 mb-2">Storing — what lives where</p>
@@ -315,7 +400,7 @@ flowchart TB
         <ul class="lead list-disc pl-5">
           <li><strong>Replication</strong> across regions (leader-follower or multi-leader) so reads are served locally — the &lt;1 s target is mostly a data-locality problem.</li>
           <li><strong>Event streaming + Change Data Capture</strong> (Kafka): registrations, key rotations, and <strong>revocations propagate</strong> as events to every edge cache and replica.</li>
-          <li><strong>CRDT (Conflict-free Replicated Data Type)-based async updates</strong> (the paper's update protocol): conflict-free metadata revision across replicas without coordination — agents publish independently.</li>
+          <li><strong>Conflict-free async updates (CRDTs, Conflict-free Replicated Data Types)</strong> (the paper's update protocol): each replica accepts metadata changes independently, and the replicas merge those changes later without coordination or locking.</li>
           <li><strong>Anti-entropy / gossip</strong> to reconcile replicas; accept <strong>eventual consistency</strong> bounded by TTL.</li>
         </ul>
 
@@ -349,7 +434,7 @@ flowchart TB
             </thead>
             <tbody class="divide-y divide-slate-100">
               <tr><td class="py-2.5 pr-4 font-medium">Resolution (index reads)</td><td class="py-2.5 pr-4"><span class="font-semibold text-blue-700">AP</span> — available + eventually consistent</td><td class="py-2.5 text-slate-700">Better to return a <em>signed, slightly-stale-within-TTL</em> AgentAddr than to fail a lookup during a partition. Staleness is <strong>bounded</strong> (TTL) and <strong>detectable</strong> (signed), so it's safe. Resolution must never go down globally.</td></tr>
-              <tr><td class="py-2.5 pr-4 font-medium">Revocation / security</td><td class="py-2.5 pr-4"><span class="font-semibold text-rose-700">leans CP</span> — wants strong consistency</td><td class="py-2.5 text-slate-700">You must <em>not</em> serve a revoked credential. This is the tension: it pulls toward consistency. Reconciled by <strong>short TTLs (&lt;5 min VCs)</strong> + a fast revocation list — you accept a small, tunable window of inconsistency as the safety/availability knob.</td></tr>
+              <tr><td class="py-2.5 pr-4 font-medium">Revocation / security</td><td class="py-2.5 pr-4"><span class="font-semibold text-rose-700">leans CP</span> — wants strong consistency</td><td class="py-2.5 text-slate-700">You must <em>not</em> serve a revoked credential, which is what pulls revocation toward strong consistency. NANDA reconciles this with <strong>short TTLs (&lt;5 min VCs)</strong> plus a fast revocation list: you accept a small window of inconsistency, and you tune that window to trade safety against availability.</td></tr>
               <tr><td class="py-2.5 pr-4 font-medium">Audit log</td><td class="py-2.5 pr-4"><span class="font-semibold text-rose-700">CP</span> — durable + ordered</td><td class="py-2.5 text-slate-700">Compliance and liability need a correct, append-only, ordered record — favour consistency/durability over availability for writes.</td></tr>
             </tbody>
           </table>
@@ -361,9 +446,9 @@ flowchart TB
           the paper signs everything and scopes it with TTLs.
         </p>
         <p class="why">
-          Going deeper (<strong>PACELC</strong>): even with <em>no</em> partition, there's a latency-vs-consistency
+          Going deeper (<strong>PACELC</strong>, an extension of CAP): even with <em>no</em> partition, there's a latency-vs-consistency
           trade-off. NANDA chooses <strong>Latency</strong> for resolution (cache + replicas, eventual consistency)
-          to hit the &lt;1 s target — i.e. it's a <strong>PA/EL</strong> system: Available under partition, Latency-first otherwise.
+          to hit the &lt;1 s target — i.e. it's a <strong>PA/EL</strong> system: when Partitioned, stay Available; Else, favour Latency.
         </p>
       </div>
     </section>
@@ -573,9 +658,9 @@ flowchart TB
           A CDN edge is infrastructure you don't fully control. Normally you'd worry it might tamper with cached
           content. But every AgentAddr and AgentFacts VC is <strong>Ed25519-signed and verified client-side</strong>, so
           a malicious or buggy edge <em>cannot forge a response</em>. That's what lets NANDA push signed objects to any
-          edge — even third-party CDNs or IPFS — with no trust problem. (Routing tokens have a 60 s TTL, usually too
-          short to bother caching.) Signed objects can even be <strong>redistributed peer-to-peer</strong> by clients
-          within their TTL — the paper's "2N handshake," where the index is touched once.
+          edge — even third-party CDNs or IPFS — with no trust problem. Routing tokens are the exception: their 60 s TTL is usually too
+          short to bother caching. Signed objects can even be <strong>redistributed peer-to-peer</strong> by clients
+          within their TTL. This is the paper's "2N handshake": the index is touched once, and the answer then spreads peer-to-peer for the rest of its TTL.
         </p>
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Cache invalidation — the genuinely hard part</p>
@@ -750,12 +835,12 @@ flowchart TB
 
         <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Reverse proxy → fronting the services</p>
         <p class="lead">
-          Every service should sit behind a reverse proxy / API gateway that handles <strong>TLS (Transport Layer Security) termination,
+          Every service should sit behind a reverse proxy / API gateway that handles the cross-cutting concerns: <strong>TLS (Transport Layer Security) termination,
           load balancing</strong> across replicas, <strong>rate-limiting</strong> (the <code>/register</code>
-          protection), request routing, and <strong>DDoS shielding</strong> — the paper points to Envoy/NGINX for the
+          protection), request routing, and <strong>DDoS shielding</strong>. The paper points to Envoy/NGINX for the
           adaptive resolver, and a <strong>CDN is just a globally-distributed reverse-proxy cache</strong> (the caching
-          section above). It's also the natural place to enforce <strong>mTLS (mutual TLS — both sides authenticate) between services</strong>, centralise
-          auth, and emit per-request telemetry, since every request flows through it — one clean control point.
+          section above). Because every request flows through this one point, it's also the natural place to enforce <strong>mTLS (mutual TLS — both sides authenticate) between services</strong>, centralise
+          auth, and emit per-request telemetry.
         </p>
       </div>
     </section>
@@ -783,7 +868,7 @@ flowchart TB
         <h3 class="sec-title">Hide who is asking, not just what is signed</h3>
         <ul class="lead list-disc pl-5 mt-2">
           <li><strong>Real privacy-path hosting</strong> (§VII.C): the MVP's "private" facts host is just a second HTTP service. In production it's <strong>IPFS / a neutral gateway / Tor-style relays</strong> so the agent's domain is never contacted and the requester stays anonymous.</li>
-          <li><strong>Dual-path resolution</strong> via <code>PrimaryFactsURL</code> + <code>PrivateFactsURL</code>, with cacheable or mix-net-broadcast requests to defeat traffic-analysis correlation (§E).</li>
+          <li><strong>Dual-path resolution</strong> via <code>PrimaryFactsURL</code> + <code>PrivateFactsURL</code>: the normal path serves cacheable public facts, while the private path can broadcast the request over a mix-net so that an observer can't link who asked for what (§E).</li>
           <li><strong>Split-horizon</strong>: return different answers depending on who/where is asking, for enterprise governance — without leaking the query.</li>
           <li><strong>Data minimisation / least-disclosure</strong>; longer term, ZKP-based capability proofs (§X) so an agent proves compliance without revealing full certificate chains.</li>
         </ul>
@@ -840,7 +925,7 @@ flowchart TB
         <ul class="lead list-disc pl-5 mt-2">
           <li><strong>Cross-index federation</strong> (§IV.C): independent indexes operated by enterprises, clouds, or public bodies, linked with verifiable credentials and registry-to-registry bridges. "Quilt" only becomes real with federation.</li>
           <li><strong>Diverse registration models</strong> (§IV.B, Table 1): NANDA-native, enterprise-routed, and Web3/DID-marketplace agents — with consistent metadata standards across boundaries.</li>
-          <li><strong>Standards alignment</strong> (§X): drive the AgentFacts schema through IETF/W3C, keep the trust primitive (signed VCs over canonical JSON) portable so it interoperates with A2A, MCP, NLWeb, ANS/ANP.</li>
+          <li><strong>Standards alignment</strong> (§X): drive the AgentFacts schema through IETF/W3C, and keep the core trust building block (signed VCs over canonical JSON) portable so it interoperates with other agent-interop protocols such as A2A, MCP, NLWeb, and ANS/ANP.</li>
           <li><strong>Governance model</strong>: who decides what goes in the spec, revocation/dispute protocols, multi-jurisdictional policy — sketched as a steering committee with rotating representation.</li>
         </ul>
       </div>
@@ -893,6 +978,61 @@ flowchart TB
           The crypto and the resolution flow are already production-shaped (Ed25519, JCS, W3C VC, signed routing tokens).
           What changes for real scale is the storage, hosting, key management, observability, and federation around them.
         </p>
+      </div>
+    </section>
+
+    <!-- ============== END-TO-END CLIENT RESOLUTION FLOW ============== -->
+    <section>
+      <div class="card card-padded">
+        <p class="eyebrow text-blue-700">Putting it together <span class="pill pill-scale">scale</span></p>
+        <h3 class="sec-title">The complete client resolution flow — every step verified</h3>
+        <p class="sec-desc">The architecture diagram earlier shows the <em>infrastructure</em>. This shows the <em>client's journey</em> through it: three cache-able lookups, each <strong>verified</strong> before the next, ending in a <strong>direct</strong> call to the agent. It's the read path with the cryptography made explicit — a hardened version of the obvious "GeoDNS → cache → origin" design.</p>
+        <p class="text-sm text-slate-600 mt-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">🧠 <strong>Original read-path architecture designed from scratch by Swasthika Devadiga</strong> — per-object caching, GeoDNS routing, cache-miss&nbsp;→&nbsp;origin, replication, Kafka, and the adaptive resolver. The signature-verification, revocation, and direct-call steps were added while hardening it.</p>
+        <div class="mermaid-box">
+<pre class="mermaid">
+flowchart TB
+    C["Client<br/>(drives the chain — verifies every step)"]
+
+    C --> E1["① GeoDNS → nearest index region<br/>CDN / edge cache"]
+    E1 -. "TTL expired / miss" .-> O1[("index origin<br/>sharded · replicated · Kafka")]
+    E1 == "TTL valid · hit" ==> VA{"verify with<br/>INDEX key"}
+    O1 --> VA
+    VA == "pass" ==> K1["AgentAddr&nbsp;⇒&nbsp;agent key + FactsURL"]
+
+    K1 --> E2["② follow FactsURL<br/>CDN / object store"]
+    E2 -. "miss" .-> O2[("facts origin<br/>S3 / CDN / IPFS · self-published")]
+    E2 == "TTL valid · hit" ==> VB{"verify with<br/>AGENT key (from ①)"}
+    O2 --> VB
+    VB == "pass" ==> RV{"revocation check<br/>VC-Status"}
+    RV -. "revoked" .-> STOP["✗ reject — never call"]
+    RV == "valid" ==> K2["AgentFacts&nbsp;⇒&nbsp;endpoints + resolver URL"]
+
+    K2 --> E3["③ adaptive resolver"]
+    E3 --> VC{"verify with<br/>RESOLVER key"}
+    VC == "signed token · 60s" ==> EP["④ CALL AGENT ENDPOINT DIRECTLY<br/>agent's own infra — NOT NANDA-cached"]
+
+    classDef edge fill:#dbeafe,stroke:#1d4ed8,color:#0f172a
+    classDef store fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+    classDef verify fill:#fef3c7,stroke:#d97706,color:#0f172a
+    classDef good fill:#dcfce7,stroke:#16a34a,color:#0f172a
+    classDef bad fill:#fee2e2,stroke:#dc2626,color:#0f172a
+    class E1,E2,E3 edge
+    class O1,O2 store
+    class VA,VB,VC,RV verify
+    class EP good
+    class STOP bad
+</pre>
+        </div>
+        <p class="diagram-cap">Each step is GeoDNS + CDN cache (a hit while the TTL is valid, otherwise fall through to the origin) <em>followed by a signature check</em>. The chain links by data — each verified object hands you the key and URL for the next — and only the final call reaches the agent's own infrastructure, which NANDA never caches.</p>
+
+        <p class="text-xs uppercase tracking-widest font-semibold text-slate-500 mt-5 mb-2">Why this beats a naive cache-only design</p>
+        <ul class="lead list-disc pl-5 space-y-1">
+          <li><strong>Verify at every hop.</strong> <span class="tp">The client checks a signature after each fetch</span> — which is what makes caching on untrusted CDNs safe: a poisoned cache simply fails verification.</li>
+          <li><strong>It's a chain, not three parallel pipelines.</strong> The AgentAddr hands you the agent's key <em>and</em> the FactsURL; the AgentFacts hands you the endpoints. One trust anchor — the index's key — flows all the way down.</li>
+          <li><strong>Revocation gate.</strong> A revoked credential is rejected <em>before</em> any call — TTL freshness plus an instant kill switch.</li>
+          <li><strong>Facts live off-index.</strong> AgentFacts come from object storage / CDN / IPFS that the agent self-publishes — never an index replica.</li>
+          <li><strong>The agent call is direct.</strong> <span class="tp">NANDA caches the pointers, not the agent's live responses</span> — the final call goes straight to the agent's own infrastructure, which it scales itself.</li>
+        </ul>
       </div>
     </section>
 
