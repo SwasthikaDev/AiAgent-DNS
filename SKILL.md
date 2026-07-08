@@ -2,7 +2,7 @@
 
 **Look up an AI agent by name and get back a cryptographically verified endpoint, then call it.** This is a working implementation of the NANDA "Beyond DNS" Index: a name resolves to a signed `AgentAddr`, which points to a signed `AgentFacts` credential (a W3C Verifiable Credential, Ed25519 over JCS). Every hop is signature-checked, so a man-in-the-middle who swaps an endpoint is rejected. You call one gateway and it does the verification for you.
 
-- **Base URL:** `https://YOUR-DEPLOYMENT-URL` *(replace with your live host)*
+- **Base URL:** `https://aiagent-dns.onrender.com`
 - **Auth:** none. No API key, no signup. JSON in, JSON out.
 - **Why a gateway:** the underlying trust model verifies signatures on the client. That needs Ed25519 and JSON canonicalization, which a shell agent cannot do. This service verifies on the server and hands you plain JSON, so you can resolve and call an agent with nothing but HTTP.
 
@@ -36,7 +36,7 @@ Walks the chain (index → signed AgentAddr → signed AgentFacts credential),
 verifies every signature, and returns the result.
 
 ```bash
-curl -sS https://YOUR-DEPLOYMENT-URL/resolve/urn:agent:demo:echo
+curl -sS https://aiagent-dns.onrender.com/resolve/urn:agent:demo:echo
 ```
 
 **Response**
@@ -54,7 +54,7 @@ curl -sS https://YOUR-DEPLOYMENT-URL/resolve/urn:agent:demo:echo
   "agent": {
     "label": "Echo Agent",
     "description": "Returns whatever message you send it.",
-    "endpoint": "https://YOUR-DEPLOYMENT-URL/agent/echo",
+    "endpoint": "https://aiagent-dns.onrender.com/agent/echo",
     "skills": ["echo"]
   },
   "next_step": "POST /call/urn:agent:demo:echo with a JSON body to send it a message."
@@ -74,7 +74,7 @@ Re-verifies the chain, then sends the agent a message at its verified endpoint. 
 verification fails, it refuses to call.
 
 ```bash
-curl -sS -X POST https://YOUR-DEPLOYMENT-URL/call/urn:agent:demo:echo \
+curl -sS -X POST https://aiagent-dns.onrender.com/call/urn:agent:demo:echo \
   -H 'Content-Type: application/json' \
   -d '{"message": "hello nanda"}'
 ```
@@ -84,7 +84,7 @@ curl -sS -X POST https://YOUR-DEPLOYMENT-URL/call/urn:agent:demo:echo \
 {
   "status": "ok",
   "verified": true,
-  "endpoint_called": "https://YOUR-DEPLOYMENT-URL/agent/echo",
+  "endpoint_called": "https://aiagent-dns.onrender.com/agent/echo",
   "agent_response": { "echo": "hello nanda" },
   "note": "The endpoint was cryptographically verified before the call was made."
 }
@@ -98,7 +98,7 @@ Fetches the agent's credential, swaps the endpoint for an attacker URL, and
 re-runs verification to show it is rejected.
 
 ```bash
-curl -sS https://YOUR-DEPLOYMENT-URL/demo/tamper/urn:agent:demo:echo
+curl -sS https://aiagent-dns.onrender.com/demo/tamper/urn:agent:demo:echo
 ```
 
 **Response**
@@ -114,7 +114,7 @@ curl -sS https://YOUR-DEPLOYMENT-URL/demo/tamper/urn:agent:demo:echo
 
 ### GET `/health`
 ```bash
-curl -sS https://YOUR-DEPLOYMENT-URL/health
+curl -sS https://aiagent-dns.onrender.com/health
 # {"status":"ok","service":"aiagent-dns","agents":3}
 ```
 
@@ -127,7 +127,7 @@ is cryptographically verified, call it, and confirm the system rejects a tampere
 credential — all on your own.
 
 ```bash
-BASE=https://YOUR-DEPLOYMENT-URL
+BASE=https://aiagent-dns.onrender.com
 
 # 0. Read a one-paragraph summary of what this service is.
 curl -sS "$BASE/about"
