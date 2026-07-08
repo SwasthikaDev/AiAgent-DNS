@@ -21,7 +21,9 @@ Three demo agents are pre-registered: `urn:agent:demo:echo`,
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/resolve/{name}` | Resolve a name to a verified endpoint + capabilities. **Start here.** |
-| POST | `/call/{name}` | Re-verify and send the agent a message. |
+| POST | `/call/{name}` | Re-verify and send the agent a message (optional `region` for adaptive routing). |
+| POST | `/register` | Publish your own agent under a name so others can resolve it. |
+| GET | `/route/{name}` | Adaptive routing: get a signed, region-aware endpoint token. |
 | GET | `/demo/tamper/{name}` | Show a tampered credential being rejected. |
 | GET | `/agents` | List the registered agents. |
 | GET | `/health` | Liveness. |
@@ -89,6 +91,47 @@ curl -sS -X POST https://aiagent-dns.onrender.com/call/urn:agent:demo:echo \
   "note": "The endpoint was cryptographically verified before the call was made."
 }
 ```
+
+---
+
+### POST `/register`
+
+Publish your own agent under a name so any other agent can resolve and reach it.
+The service generates a signing key, writes a signed credential, and registers it,
+so it is immediately resolvable and verifiable like the built-in demos.
+
+```bash
+curl -sS -X POST https://aiagent-dns.onrender.com/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "urn:agent:acme:mybot", "endpoint": "https://your-agent.example.com/call", "label": "My Bot", "skills": ["chat"]}'
+```
+
+**Response**
+```json
+{ "status": "ok", "registered": true, "agent_name": "urn:agent:acme:mybot", "resolve": "/resolve/urn:agent:acme:mybot" }
+```
+After this, `GET /resolve/urn:agent:acme:mybot` returns your verified agent, and any
+agent can call it. Registrations live for the duration of the deployment.
+
+---
+
+### GET `/route/{name}` and adaptive `POST /call`
+
+Some agents route by region at call time. `GET /route/{name}?region=eu-west` asks the
+Adaptive Resolver for a **signed, TTL-scoped endpoint token** — the downstream agent
+can prove the routing came from a legitimate resolver, not a forged URL. Passing
+`"region"` to `/call` uses this automatically.
+
+```bash
+curl -sS "https://aiagent-dns.onrender.com/route/urn:agent:demo:multiregion?region=eu-west"
+
+curl -sS -X POST https://aiagent-dns.onrender.com/call/urn:agent:demo:multiregion \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "route me", "region": "us-east"}'
+```
+`urn:agent:demo:multiregion` is pre-registered with regional endpoints. The response
+includes a `routing` block showing the region, the policy applied, and that the
+routing token was verified.
 
 ---
 

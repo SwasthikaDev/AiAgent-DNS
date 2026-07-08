@@ -20,6 +20,7 @@ public base. Locally it defaults to http://localhost:8000.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from contextlib import asynccontextmanager
@@ -51,6 +52,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse  # n
 from pydantic import BaseModel  # noqa: E402
 
 from nanda.crypto import (  # noqa: E402
+    generate_keypair,
     load_or_create_keypair,
     sign_vc_payload,
     verify_payload,
@@ -210,6 +212,34 @@ def _resolve_and_verify(agent_name: str) -> dict[str, Any] | None:
 
 class CallBody(BaseModel):
     message: str = "hello from an agent"
+    region: str | None = None  # optional: route via the Adaptive Resolver for this region
+
+
+class RegisterBody(BaseModel):
+    name: str  # a name to publish under, e.g. urn:agent:acme:mybot
+    endpoint: str  # the URL other agents should call to reach you
+    label: str = ""
+    description: str = ""
+    skills: list[str] = []
+
+
+_RESERVED = {"urn:agent:demo:echo", "urn:agent:demo:translate", "urn:agent:demo:multiregion"}
+
+
+def _route_via_resolver(agent_name: str, adaptive_url: str, region: str) -> dict[str, Any] | None:
+    """Ask the Adaptive Resolver for a signed routing token and verify it. None on failure."""
+    try:
+        token = httpx.post(
+            adaptive_url,
+            json={"agent_name": agent_name, "client_region": region, "policy": "geo"},
+            timeout=8.0,
+        ).json()
+    except Exception:  # noqa: BLE001
+        return None
+    resolver_pub = token.get("resolver_pubkey", "")
+    if not resolver_pub or not verify_payload(token, resolver_pub):
+        return None
+    return token
 
 
 @root.get("/", include_in_schema=False)
@@ -245,9 +275,17 @@ def about() -> dict[str, Any]:
         "is verified, so a man-in-the-middle who swaps an endpoint is rejected. The gateway does that "
         "verification server-side so any agent can use it with plain HTTP.",
         "how_it_works": "GET /resolve/{name} returns the verified agent and its endpoint; POST /call/{name} "
-        "re-verifies and calls it; GET /demo/tamper/{name} shows a tampered credential being rejected.",
+        "re-verifies and calls it; POST /register publishes your own agent; GET /route/{name} shows adaptive "
+        "routing with a signed token; GET /demo/tamper/{name} shows a tampered credential being rejected.",
         "primary_endpoint": "GET /resolve/urn:agent:demo:echo",
-        "endpoints": ["GET /resolve/{name}", "POST /call/{name}", "GET /demo/tamper/{name}", "GET /agents"],
+        "endpoints": [
+            "GET /resolve/{name}",
+            "POST /call/{name}",
+            "POST /register",
+            "GET /route/{name}",
+            "GET /demo/tamper/{name}",
+            "GET /agents",
+        ],
         "skill_md": "/skill.md",
         "source": "https://github.com/SwasthikaDev/AiAgent-DNS",
         "paper": "Beyond DNS: Unlocking the Internet of AI Agents via the NANDA Index and Verified AgentFacts",
@@ -325,6 +363,19 @@ def gateway_call(agent_name: str, body: CallBody):
             "reason": "Signature verification failed; refusing to call a possibly-tampered endpoint.",
         }
     endpoint = r["facts"]["credentialSubject"]["endpoints"]["static"][0]
+    routing: dict[str, Any] | None = None
+    adaptive_url = r["addr"].get("adaptive_resolver_url")
+    if body.region and adaptive_url:
+        token = _route_via_resolver(agent_name, adaptive_url, body.region)
+        if token is not None:
+            endpoint = token["endpoint"]
+            routing = {
+                "via": "adaptive-resolver",
+                "region": token.get("region"),
+                "policy_applied": token.get("policy_applied"),
+                "routing_token_verified": True,
+                "expires_at": token.get("expires_at"),
+            }
     try:
         resp = httpx.post(endpoint, json={"message": body.message}, timeout=8.0).json()
     except Exception as exc:  # noqa: BLE001
@@ -333,8 +384,109 @@ def gateway_call(agent_name: str, body: CallBody):
         "status": "ok",
         "verified": True,
         "endpoint_called": endpoint,
+        "routing": routing,
         "agent_response": resp,
         "note": "The endpoint was cryptographically verified before the call was made.",
+    }
+
+
+@root.get("/route/{agent_name:path}")
+def gateway_route(agent_name: str, region: str = "us-east"):
+    """Show adaptive routing: the resolver returns a signed, TTL-scoped endpoint token."""
+    r = _resolve_and_verify(agent_name)
+    if r is None:
+        return JSONResponse(
+            status_code=404, content={"error": "agent_not_found", "fix": "Use urn:agent:demo:multiregion."}
+        )
+    adaptive_url = r["addr"].get("adaptive_resolver_url")
+    if not adaptive_url:
+        return {
+            "status": "no_adaptive_routing",
+            "message": f"{agent_name} has a static endpoint, not an adaptive resolver.",
+            "static_endpoint": r["facts"]["credentialSubject"]["endpoints"]["static"][0],
+            "try": "urn:agent:demo:multiregion has adaptive routing.",
+        }
+    token = _route_via_resolver(agent_name, adaptive_url, region)
+    if token is None:
+        return {"status": "error", "reason": "adaptive resolver did not return a valid signed token"}
+    return {
+        "status": "ok",
+        "agent_name": agent_name,
+        "requested_region": region,
+        "routing_token_verified": True,
+        "endpoint": token["endpoint"],
+        "region": token.get("region"),
+        "policy_applied": token.get("policy_applied"),
+        "expires_at": token.get("expires_at"),
+        "note": "The resolver signed this endpoint choice; a downstream agent can prove the routing "
+        "came from a legitimate resolver, not a forged URL.",
+    }
+
+
+@root.post("/register")
+def gateway_register(body: RegisterBody):
+    """Publish an agent under a name so any other agent can resolve and verify it.
+
+    The gateway generates the agent's signing key, writes a signed AgentFacts
+    credential, and registers it in the index. It is then resolvable at
+    /resolve/{name} exactly like the built-in demos. (Registrations live for the
+    duration of this deployment; the built-in demos re-register on restart.)
+    """
+    name = body.name.strip()
+    endpoint = body.endpoint.strip()
+    if not name or not endpoint:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "missing_fields",
+                "message": "Both 'name' and 'endpoint' are required.",
+                "fix": "Send {\"name\": \"urn:agent:acme:mybot\", \"endpoint\": \"https://.../call\"}.",
+            },
+        )
+    if name in _RESERVED:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "reserved_name",
+                "message": f"'{name}' is a built-in demo agent.",
+                "fix": "Choose a different name, e.g. urn:agent:acme:mybot.",
+            },
+        )
+    aid = "nanda:" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:12]  # noqa: S324 - id, not security
+    priv, pub = generate_keypair()
+    primary_facts_url = f"{BASE}/facts-primary/facts/{aid}"
+    index_db.upsert_agent(
+        agent_id=aid,
+        agent_name=name,
+        public_key=pub,
+        primary_facts_url=primary_facts_url,
+        private_facts_url=None,
+        adaptive_resolver_url=None,
+        ttl_seconds=3600,
+        registered_at=_now(),
+    )
+    subject = {
+        "id": aid,
+        "agent_name": name,
+        "label": body.label or name,
+        "description": body.description or "Registered via /register.",
+        "version": "0.1.0",
+        "provider": {"name": "self-registered", "url": BASE},
+        "endpoints": {"static": [endpoint]},
+        "capabilities": {"modalities": ["text"], "streaming": False, "authentication": {"methods": ["none"]}},
+        "skills": ([{"id": s, "description": s} for s in body.skills] or [{"id": "custom", "description": "Registered agent."}]),
+        "ttl": 300,
+    }
+    signed = sign_vc_payload(credential_subject=subject, issuer_public_key_b64=pub, issuer_private_key_b64=priv)
+    facts_main.put_facts(aid, signed)
+    return {
+        "status": "ok",
+        "registered": True,
+        "agent_name": name,
+        "resolve": f"/resolve/{name}",
+        "note": "Your agent is now resolvable and its endpoint is signed. Any agent can GET "
+        f"/resolve/{name} to verify and reach it. The gateway generated and holds the signing key "
+        "for this demo.",
     }
 
 
