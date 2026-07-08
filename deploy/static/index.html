@@ -51,6 +51,17 @@
     section.block { margin-top: 42px; }
     section.block > h2 { font-size: 22px; margin: 0 0 6px; }
     section.block > p.s { color: var(--muted); margin: 0 0 16px; }
+    .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; margin-top: 16px; }
+    table.cmp { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 560px; }
+    table.cmp th, table.cmp td { text-align: left; padding: 12px 15px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.cmp thead th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; }
+    table.cmp thead th.new { color: var(--primary-600); }
+    table.cmp td.dim { font-weight: 700; color: var(--ink); white-space: nowrap; }
+    table.cmp td.old { color: var(--muted); }
+    table.cmp td.new { color: var(--ink); background: var(--primary-050); }
+    table.cmp tbody tr:last-child td { border-bottom: none; }
+    .kbd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--bg-alt);
+      border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
     .cascade { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap: 14px; }
     .node { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
     .node .n { width: 26px; height: 26px; border-radius: 7px; background: var(--primary-050); color: var(--primary-600);
@@ -67,6 +78,8 @@
       <div class="brand"><span class="logo" aria-hidden="true">&#128225;</span> AiAgent-DNS</div>
       <nav>
         <a href="#how">How it works</a>
+        <a href="#compare">Compare</a>
+        <a href="#scale">Scale</a>
         <a href="/skill.md">SKILL.md</a>
         <a href="/docs">API</a>
         <a href="/index/ui/">Crypto demo</a>
@@ -109,6 +122,35 @@
         <div class="node"><div class="n">2</div><h3>Verify AgentAddr</h3><p>Its signature is checked against the index's key.</p></div>
         <div class="node"><div class="n">3</div><h3>AgentAddr → AgentFacts</h3><p>The record points to a signed W3C credential with the agent's endpoint and skills.</p></div>
         <div class="node"><div class="n">4</div><h3>Verify + call</h3><p>The credential is checked against the agent's key (and its own did:key), then the endpoint is called.</p></div>
+      </div>
+    </section>
+
+    <section class="block" id="compare">
+      <h2>How it compares to DNS</h2>
+      <p class="s">DNS resolves a name to an address and asks you to trust the answer. This resolves a name to a <b>verified</b> one.</p>
+      <div class="tablewrap">
+        <table class="cmp">
+          <thead><tr><th scope="col"></th><th scope="col">Plain DNS</th><th scope="col" class="new">AiAgent-DNS</th></tr></thead>
+          <tbody>
+            <tr><td class="dim">A name resolves to</td><td class="old">An IP address</td><td class="new">A signed endpoint plus the agent's skills and keys</td></tr>
+            <tr><td class="dim">Trust in the answer</td><td class="old">None by default — you trust the resolver</td><td class="new">Every hop is Ed25519-verified over JCS; the client checks it</td></tr>
+            <tr><td class="dim">The records</td><td class="old">A / AAAA / TXT with a TTL</td><td class="new">Signed AgentAddr → signed W3C AgentFacts credential</td></tr>
+            <tr><td class="dim">A poisoned record</td><td class="old">Resolves silently to the wrong host</td><td class="new">Fails verification and is rejected — try the tamper demo above</td></tr>
+            <tr><td class="dim">What the record describes</td><td class="old">A host</td><td class="new">An agent: its endpoint, capabilities, and did:key identity</td></tr>
+            <tr><td class="dim">Routing</td><td class="old">Static A records</td><td class="new">Optional signed, region-aware adaptive routing</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="scale">
+      <h2>Built to scale</h2>
+      <p class="s">It borrows the exact properties that let DNS serve the whole internet.</p>
+      <div class="cascade">
+        <div class="node"><div class="n">&rsaquo;</div><h3>Lean, cacheable records</h3><p>Signed records are small and TTL-cacheable, so hot lookups are served from an edge cache and never touch origin — DNS's core read-scaling trick.</p></div>
+        <div class="node"><div class="n">&rsaquo;</div><h3>Stateless resolver fleet</h3><p>Resolvers, facts hosts, and the adaptive resolver hold no per-request state, so they sit behind a load balancer and autoscale on request volume.</p></div>
+        <div class="node"><div class="n">&rsaquo;</div><h3>Decentralized facts</h3><p>AgentFacts credentials are self-published and self-verifying, so the bulk of metadata traffic bypasses the index entirely — the biggest scaling win.</p></div>
+        <div class="node"><div class="n">&rsaquo;</div><h3>Delegation by name</h3><p>Like DNS zones, authority partitions by name, so load and governance distribute across independent operators instead of one bottleneck.</p></div>
       </div>
     </section>
   </main>
