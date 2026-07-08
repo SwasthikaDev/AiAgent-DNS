@@ -78,6 +78,7 @@
       <div class="brand"><span class="logo" aria-hidden="true">&#128225;</span> AiAgent-DNS</div>
       <nav>
         <a href="#how">How it works</a>
+        <a href="#why">Why</a>
         <a href="#compare">Compare</a>
         <a href="#scale">Scale</a>
         <a href="/skill.md">SKILL.md</a>
@@ -123,6 +124,15 @@
         <div class="node"><div class="n">3</div><h3>AgentAddr → AgentFacts</h3><p>The record points to a signed W3C credential with the agent's endpoint and skills.</p></div>
         <div class="node"><div class="n">4</div><h3>Verify + call</h3><p>The credential is checked against the agent's key (and its own did:key), then the endpoint is called.</p></div>
       </div>
+    </section>
+
+    <section class="block" id="why">
+      <h2>Why we built it</h2>
+      <p class="s">The agentic web needs a way to look up an agent by name and <em>trust</em> the answer.
+        Plain DNS resolves a name to an address but signs nothing, so a swapped endpoint resolves silently.
+        NANDA's &ldquo;Beyond DNS&rdquo; paper describes the fix; this is a working version of it — a name
+        resolves to a cryptographically signed endpoint, every hop is verified, and a tampered record is
+        rejected. Naming you can trust is the foundation the rest of the agent internet sits on.</p>
     </section>
 
     <section class="block" id="compare">
