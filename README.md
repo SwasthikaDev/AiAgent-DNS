@@ -2,6 +2,8 @@
 
 A working prototype of the architecture from *Beyond DNS: Unlocking the Internet of AI Agents via the NANDA Index and Verified AgentFacts* ([paper](https://arxiv.org/pdf/2507.14263)).
 
+**Live app → [aiagent-dns.onrender.com](https://aiagent-dns.onrender.com)** — resolve an agent, verify it, and watch a tampered record get rejected, all in your browser. No signup. ([SKILL.md](https://raw.githubusercontent.com/SwasthikaDev/AiAgent-DNS/main/SKILL.md) · [API docs](https://aiagent-dns.onrender.com/docs))
+
 A client resolves an agent by name, fetches a signed `AgentAddr` from a lean index, follows it to a signed W3C **Verifiable Credential** (cryptosuite `eddsa-jcs-2022`) carrying the agent's capabilities and endpoints, verifies every signature **in the browser**, optionally dispatches through an **Adaptive Resolver** that returns a TTL-scoped signed routing token, and then calls the agent. If anyone tampers with the metadata in flight, the client refuses to use it.
 
 Ships with **two interfaces** on top of the same backend:
