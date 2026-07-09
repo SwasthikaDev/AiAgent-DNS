@@ -59,7 +59,10 @@ from nanda.crypto import (  # noqa: E402
     verify_vc,
     verify_vc_via_did,
 )
-from services.adaptive_resolver.main import app as resolver_app  # noqa: E402
+from services.adaptive_resolver.main import (  # noqa: E402
+    PUBLIC_KEY as RESOLVER_TRUSTED_PUB,
+    app as resolver_app,
+)
 from services.agents.main import app as agent_app  # noqa: E402
 from services.facts_host import main as facts_main  # noqa: E402
 from services.index_service.main import (  # noqa: E402
@@ -236,8 +239,11 @@ def _route_via_resolver(agent_name: str, adaptive_url: str, region: str) -> dict
         ).json()
     except Exception:  # noqa: BLE001
         return None
-    resolver_pub = token.get("resolver_pubkey", "")
-    if not resolver_pub or not verify_payload(token, resolver_pub):
+    # Verify against the resolver key we actually trust (the in-process Adaptive
+    # Resolver), NOT the pubkey the token asserts about itself. A self-certifying
+    # token embeds its own key, so any keypair could otherwise mint a "valid" one
+    # and repoint the endpoint. Only tokens signed by the known resolver pass.
+    if not verify_payload(token, RESOLVER_TRUSTED_PUB):
         return None
     return token
 
@@ -317,6 +323,11 @@ def gateway_resolve(agent_name: str):
             },
         )
     subject = r["facts"].get("credentialSubject", {})
+    if not isinstance(subject, dict):
+        # A tampered/malformed facts record (e.g. credentialSubject set to a string
+        # via the dumb facts store) must not crash the resolve. Its signature won't
+        # verify against the index key, so verified is already False below.
+        subject = {}
     return {
         "status": "ok",
         "agent_name": agent_name,
@@ -450,6 +461,19 @@ def gateway_register(body: RegisterBody):
                 "error": "reserved_name",
                 "message": f"'{name}' is a built-in demo agent.",
                 "fix": "Choose a different name, e.g. urn:agent:acme:mybot.",
+            },
+        )
+    if index_db.get_by_name(name) is not None:
+        # Names are immutable once registered. Without this check a second
+        # /register for the same name would overwrite the index row and facts
+        # (upsert is delete-then-insert), letting a caller repoint a previously
+        # verified endpoint to their own URL under a freshly minted valid key.
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "name_taken",
+                "message": f"'{name}' is already registered.",
+                "fix": "Choose a different, unused name (registrations are immutable in this deployment).",
             },
         )
     aid = "nanda:" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:12]  # noqa: S324 - id, not security

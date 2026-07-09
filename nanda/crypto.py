@@ -274,7 +274,13 @@ def verify_vc_via_did(credential: dict[str, Any]) -> bool:
     """
     proof = credential.get("proof") or {}
     try:
-        pub_b64 = did_key_to_pubkey_b64(proof.get("verificationMethod", ""))
+        vm_pub = did_key_to_pubkey_b64(proof.get("verificationMethod", ""))
+        issuer_pub = did_key_to_pubkey_b64(credential.get("issuer", ""))
     except (ValueError, KeyError):
         return False
-    return verify_vc(credential, pub_b64)
+    # Bind the signing key to the claimed issuer: the key in verificationMethod
+    # must be the issuer's own did:key. Without this a credential could claim
+    # issuer=<Alice> yet be validly signed by an attacker's did:key.
+    if vm_pub != issuer_pub:
+        return False
+    return verify_vc(credential, vm_pub)
