@@ -8,7 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231d4ed8'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' fill='white' text-anchor='middle'>N</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <!-- Open Sans is the UX4G default; JetBrains Mono for code blocks. -->
+  <!-- Open Sans for readable UI text; JetBrains Mono for code blocks. -->
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <!--
@@ -42,7 +42,7 @@
     .tier-desc    { @apply text-sm text-slate-600 mt-2 leading-relaxed; }
     .tier-port    { @apply text-xs font-mono text-slate-500 mt-3; }
 
-    /* ===== Buttons (UX4G-style hierarchy) ===== */
+    /* ===== Buttons ===== */
     .btn {
       @apply inline-flex items-center justify-center gap-1.5 font-semibold text-sm
              rounded-md px-4 py-2 transition focus:outline-none
@@ -159,7 +159,7 @@
   <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
-  <!-- Skip link for accessibility (UX4G WCAG alignment) -->
+  <!-- Skip link for accessibility -->
   <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2
                         focus:bg-white focus:px-3 focus:py-2 focus:rounded focus:border focus:border-slate-300 focus:z-50">
     Skip to main content
@@ -400,7 +400,7 @@
         <a href="/docs" class="text-blue-700 hover:underline font-medium">Index API docs</a> ·
         <a href="https://arxiv.org/pdf/2507.14263" class="text-blue-700 hover:underline font-medium" target="_blank" rel="noopener">paper (PDF)</a>
       </p>
-      <p class="mt-2 text-slate-400">© 2026 NANDA demo · UX based on UX4G principles · No data is stored beyond the local SQLite file.</p>
+      <p class="mt-2 text-slate-400">© 2026 NANDA demo · Clean, accessible interface · No data is stored beyond the local SQLite file.</p>
     </footer>
   </main>
 

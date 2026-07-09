@@ -1,4 +1,4 @@
-/* Custom CSS for things Tailwind doesn't generate. UX4G-aligned light theme
+/* Custom CSS for things Tailwind doesn't generate. Clean, accessible light theme
    built on Open Sans, neutral surfaces, and a single blue primary accent.
 
    Tailwind @apply utility classes live in the inline <style type="text/tailwindcss">
@@ -8,10 +8,23 @@
 :root {
   --font-sans: 'Open Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --ui-bg: #f7f9fd;
+  --ui-surface: #ffffff;
+  --ui-surface-muted: #f2f5fb;
+  --ui-line: #dce3ef;
+  --ui-ink: #142033;
+  --ui-muted: #526173;
+  --ui-primary: #1d4ed8;
+  --ui-primary-dark: #173da8;
+  --ui-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 14px 36px rgba(31, 41, 55, 0.08);
 }
 
 body {
   font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at 15% -10%, rgba(29, 78, 216, 0.08), transparent 32rem),
+    linear-gradient(180deg, #fbfdff 0, var(--ui-bg) 28rem);
+  color: var(--ui-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -79,7 +92,7 @@ select.form-input {
 /* Talking-point highlight — key lines to call out during the walkthrough.
    Looks like a marker highlight; used via <span class="tp">…</span>. */
 .tp {
-  background-color: #fde68a;
+  background-color: #fff1b8;
   border-radius: 3px;
   padding: 0.05em 0.28em;
   font-weight: 500;
@@ -93,10 +106,74 @@ select.form-input {
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* Focus styles: clear and obvious for keyboard navigation (UX4G WCAG). */
+/* Focus styles: clear and obvious for keyboard navigation. */
 :focus-visible {
-  outline: 2px solid #1d4ed8;
-  outline-offset: 2px;
+  outline: 3px solid rgba(29, 78, 216, 0.72);
+  outline-offset: 3px;
+}
+
+/* Shared polish for all static pages that use Tailwind CDN utilities. */
+header.bg-white {
+  background: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(14px);
+  border-color: rgba(220, 227, 239, 0.9) !important;
+}
+
+.card,
+.agent-row,
+.tier-card,
+.alert,
+.help-block,
+.json-block {
+  border-color: var(--ui-line) !important;
+}
+
+.card,
+.agent-row,
+.tier-card {
+  box-shadow: var(--ui-shadow) !important;
+}
+
+.card:hover,
+.agent-row:hover,
+.tier-card:hover {
+  transform: translateY(-1px);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.form-input,
+.json-block,
+.alert,
+.help-block,
+.cascade-step,
+.mermaid-box {
+  border-radius: 0.5rem !important;
+}
+
+.btn-primary {
+  background: var(--ui-primary) !important;
+}
+
+.btn-primary:hover {
+  background: var(--ui-primary-dark) !important;
+}
+
+.btn-secondary:hover {
+  border-color: #b9c4d5 !important;
+}
+
+.form-input {
+  min-height: 2.65rem;
+}
+
+@media (max-width: 640px) {
+  header .flex.gap-2 {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 /* Reduce motion respects user preference. */
